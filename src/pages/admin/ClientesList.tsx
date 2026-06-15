@@ -27,8 +27,8 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { ClientForm } from '@/components/admin/ClientForm'
-import { deleteClient } from '@/services/api'
-import { Pencil, Plus, Trash2 } from 'lucide-react'
+import { deleteClient, syncTallySubmissions } from '@/services/api'
+import { Loader2, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 export default function ClientesList() {
@@ -39,6 +39,7 @@ export default function ClientesList() {
   const [editing, setEditing] = useState<any | null>(null)
   const [programFilter, setProgramFilter] = useState('all')
   const [search, setSearch] = useState('')
+  const [syncingTally, setSyncingTally] = useState(false)
 
   const loadData = async () => {
     const res = await pb
@@ -92,6 +93,25 @@ export default function ClientesList() {
     }
   }
 
+  const handleTallySync = async () => {
+    setSyncingTally(true)
+    try {
+      const result = await syncTallySubmissions()
+      await loadData()
+      if (!result.enabled) {
+        toast.error('Configure TALLY_API_KEY para sincronizar respostas antigas.')
+        return
+      }
+      toast.success(
+        `Tally sincronizado: ${result.updated} cliente(s) atualizado(s) em ${result.checked} resposta(s).`,
+      )
+    } catch (_) {
+      toast.error('Não foi possível sincronizar o Tally.')
+    } finally {
+      setSyncingTally(false)
+    }
+  }
+
   const getLimit = (client: any) => {
     if (client.meeting_limit_override > 0) return client.meeting_limit_override
     return (
@@ -128,6 +148,14 @@ export default function ClientesList() {
               ))}
             </SelectContent>
           </Select>
+          <Button variant="secondary" onClick={handleTallySync} disabled={syncingTally}>
+            {syncingTally ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <RefreshCw className="w-4 h-4 mr-2" />
+            )}
+            Sincronizar Tally
+          </Button>
           <Dialog
             open={open}
             onOpenChange={(next) => {

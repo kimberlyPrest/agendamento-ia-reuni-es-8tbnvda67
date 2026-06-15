@@ -71,6 +71,12 @@ export const startGoogleOAuth = async (consultantId: string) => {
   return data as { url: string }
 }
 
+export const syncTallySubmissions = () =>
+  apiRequest<{ enabled: boolean; checked: number; updated: number }>('/backend/v1/tally/sync', {
+    method: 'POST',
+    headers: { Authorization: pb.authStore.token },
+  })
+
 export const getClientByEmail = async (email: string) => {
   try {
     const data = await authClientByEmail(email)

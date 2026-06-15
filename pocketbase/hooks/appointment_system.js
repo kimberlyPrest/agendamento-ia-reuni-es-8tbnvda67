@@ -398,6 +398,8 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
   const BR_TIMEZONE = 'America/Sao_Paulo'
   const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token'
   const GOOGLE_CALENDAR_BASE = 'https://www.googleapis.com/calendar/v3'
+  const TALLY_API_BASE = 'https://api.tally.so'
+  const TALLY_FORM_ID = 'wdRX0N'
   const route = e.request.pathValue('path')
 
   const env = (key) => {
@@ -463,6 +465,77 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
   const googleConfigReady = () => Boolean(env('GOOGLE_CLIENT_ID') && env('GOOGLE_CLIENT_SECRET'))
   const googleConnected = (consultant) =>
     Boolean(googleConfigReady() && consultant.get('google_refresh_token'))
+  const tallyApiReady = () => Boolean(env('TALLY_API_KEY'))
+  const collectEmailCandidates = (value, emails) => {
+    if (value === undefined || value === null) return
+    if (Array.isArray(value)) {
+      value.forEach((item) => collectEmailCandidates(item, emails))
+      return
+    }
+    if (typeof value === 'object') {
+      Object.keys(value).forEach((key) => collectEmailCandidates(value[key], emails))
+      return
+    }
+    String(value)
+      .split(/[\s,;<>"'()]+/)
+      .map((item) => normalizeEmail(item))
+      .filter((item) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(item))
+      .forEach((item) => emails.push(item))
+  }
+  const submissionEmails = (submission) => {
+    const emails = []
+    ;(submission.responses || []).forEach((response) => {
+      collectEmailCandidates(response.answer, emails)
+      collectEmailCandidates(response.formattedAnswer, emails)
+    })
+    collectEmailCandidates(submission.respondentEmail, emails)
+    collectEmailCandidates(submission.hiddenFields, emails)
+    return Array.from(new Set(emails))
+  }
+  const syncTallyAnsweredClients = () => {
+    if (!tallyApiReady()) return { enabled: false, checked: 0, updated: 0 }
+    let page = 1
+    let hasMore = true
+    let checked = 0
+    let updated = 0
+    const seenEmails = {}
+    while (hasMore && page <= 20) {
+      const res = $http.send({
+        url: `${TALLY_API_BASE}/forms/${TALLY_FORM_ID}/submissions?page=${page}&limit=500&filter=completed`,
+        method: 'GET',
+        headers: { authorization: `Bearer ${env('TALLY_API_KEY')}` },
+        timeout: 30,
+      })
+      if (res.statusCode < 200 || res.statusCode >= 300)
+        throw new Error('Não foi possível consultar respostas antigas do Tally.')
+      const data = res.json || {}
+      const submissions = data.submissions || []
+      checked += submissions.length
+      submissions.forEach((submission) => {
+        submissionEmails(submission).forEach((email) => {
+          if (seenEmails[email]) return
+          seenEmails[email] = true
+          try {
+            const client = findClientByEmail(email)
+            if (!client.get('form_answered')) {
+              client.set('form_answered', true)
+              client.set('tally_submission_id', submission.id || '')
+              client.set(
+                'tally_answered_at',
+                pbDate(new Date(submission.submittedAt || submission.createdAt || Date.now())),
+              )
+              client.set('tally_payload', submission)
+              $app.save(client)
+              updated += 1
+            }
+          } catch (_) {}
+        })
+      })
+      hasMore = Boolean(data.hasMore)
+      page += 1
+    }
+    return { enabled: true, checked, updated }
+  }
   const findClientByEmail = (email) => {
     const normalized = normalizeEmail(email)
     try {
@@ -787,8 +860,14 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
     const body = e.requestInfo().body || {}
     if (!body.email) return bad('Email é obrigatório')
     try {
-      const client = expandClient(findClientByEmail(body.email))
+      let client = expandClient(findClientByEmail(body.email))
       const program = $app.findRecordById('programs', client.get('program_id'))
+      if (boolValue(program, 'require_tally', true) && !client.get('form_answered')) {
+        try {
+          syncTallyAnsweredClients()
+          client = expandClient($app.findRecordById('clients', client.id))
+        } catch (_) {}
+      }
       const stats = getClientStats(client, program)
       const upcoming = getUpcomingMeeting(client.id)
       return e.json(200, {
@@ -912,6 +991,15 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
       return e.json(200, { meeting: expandMeeting(meeting) })
     } catch (err) {
       return bad(err.message || 'Erro ao remarcar')
+    }
+  }
+
+  if (route === 'tally/sync') {
+    if (!requireAdmin()) return forbidden()
+    try {
+      return e.json(200, syncTallyAnsweredClients())
+    } catch (err) {
+      return bad(err.message || 'Erro ao sincronizar respostas do Tally')
     }
   }
 
