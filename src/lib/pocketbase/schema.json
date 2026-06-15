@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-15T14:50:58.877Z",
+  "generatedAt": "2026-06-15T15:48:07.272Z",
   "collections": [
     {
       "name": "users",
@@ -110,6 +110,66 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "tally_form_template",
+          "type": "url",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "require_tally",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "max_future_meetings",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "min_interval_unit",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "min_reschedule_hours",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "late_reschedule_delay_days",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "booking_window_days",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "buffer_before_minutes",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "buffer_after_minutes",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "confirmation_message",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": []
