@@ -62,6 +62,13 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
       .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`)
       .join('&')
   const googleConfigReady = () => Boolean(env('GOOGLE_CLIENT_ID') && env('GOOGLE_CLIENT_SECRET'))
+  const hasUsableGoogleToken = (consultant) => {
+    const expiry = parseDate(consultant.get('google_token_expiry'))
+    return Boolean(
+      consultant.get('google_refresh_token') ||
+      (consultant.get('google_access_token') && expiry && expiry.getTime() > Date.now() + 120000),
+    )
+  }
   const googleRedirectUri = () => {
     const configured = env('GOOGLE_REDIRECT_URI')
     if (configured) return configured
@@ -70,7 +77,7 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
     return host ? `${proto}://${host}/backend/v1/google/oauth/callback` : ''
   }
   const googleConnected = (consultant) =>
-    Boolean(googleConfigReady() && consultant.get('google_refresh_token'))
+    Boolean(googleConfigReady() && hasUsableGoogleToken(consultant))
   const signOAuthState = (base) =>
     String($security.hs256(base, env('GOOGLE_CLIENT_SECRET'))).replace('sha256=', '')
   const buildOAuthState = (consultantId) => {
@@ -270,11 +277,17 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
         program = $app.findRecordById('programs', client.get('program_id'))
       }
       if (!googleConnected(consultant)) {
+        const status = textValue(consultant, 'google_sync_status', 'not_connected')
         return e.json(200, {
           slots: [],
           google_connected: false,
           setup_required: true,
-          message: 'Agenda Google do consultor ainda não está conectada por OAuth.',
+          google_status: status,
+          connected_email: consultant.get('google_connected_email') || '',
+          message:
+            status === 'missing_refresh_token'
+              ? 'Google autorizou, mas não enviou refresh token. Revogue o acesso do app na sua conta Google e conecte novamente.'
+              : 'Agenda Google do consultor ainda não está conectada por OAuth.',
         })
       }
       let slots = buildSlots(consultant, program, dateStr, ignoreMeetingId)
@@ -303,6 +316,60 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
       })
     } catch (err) {
       return bad(err.message || 'Erro ao buscar horários')
+    }
+  }
+
+  if (route === 'google/calendar/status') {
+    if (!requireAdmin()) return forbidden()
+    const consultantId =
+      e.request.url.query().get('consultant_id') || e.request.url.query().get('consultantId')
+    if (!consultantId) return bad('Consultor obrigatório')
+    try {
+      const consultant = $app.findRecordById('consultants', consultantId)
+      const status = textValue(consultant, 'google_sync_status', 'not_connected')
+      if (!googleConfigReady()) {
+        return e.json(200, {
+          google_connected: false,
+          status: 'missing_config',
+          message: 'Configure GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET no ambiente.',
+        })
+      }
+      if (!googleConnected(consultant)) {
+        return e.json(200, {
+          google_connected: false,
+          status,
+          connected_email: consultant.get('google_connected_email') || '',
+          calendar_id: consultant.get('google_calendar_id') || 'primary',
+          message:
+            status === 'missing_refresh_token'
+              ? 'Google autorizou, mas não enviou refresh token. Revogue o acesso do app na sua conta Google e conecte novamente.'
+              : 'Agenda Google do consultor ainda não está conectada por OAuth.',
+        })
+      }
+      const start = new Date()
+      start.setUTCHours(0, 0, 0, 0)
+      const end = addMinutes(start, 24 * 60)
+      const busy = googleFreeBusy(consultant, start, end)
+      return e.json(200, {
+        google_connected: true,
+        status: 'connected',
+        connected_email: consultant.get('google_connected_email') || '',
+        calendar_id: consultant.get('google_calendar_id') || 'primary',
+        busy_count_today: busy.length,
+        checked_range: { start: start.toISOString(), end: end.toISOString() },
+        message: 'Agenda Google acessível.',
+      })
+    } catch (err) {
+      try {
+        const consultant = $app.findRecordById('consultants', consultantId)
+        consultant.set('google_sync_status', 'calendar_error')
+        $app.save(consultant)
+      } catch (_) {}
+      return e.json(200, {
+        google_connected: false,
+        status: 'calendar_error',
+        message: err.message || 'Não foi possível consultar a agenda Google.',
+      })
     }
   }
 
@@ -363,12 +430,8 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
         pbDate(new Date(Date.now() + Number(token.expires_in || 3600) * 1000)),
       )
       consultant.set('google_scopes', token.scope || '')
-      consultant.set(
-        'google_sync_status',
-        token.refresh_token || consultant.get('google_refresh_token')
-          ? 'connected'
-          : 'missing_refresh_token',
-      )
+      const hasRefreshToken = Boolean(token.refresh_token || consultant.get('google_refresh_token'))
+      consultant.set('google_sync_status', hasRefreshToken ? 'connected' : 'missing_refresh_token')
       consultant.set('google_oauth_state', '')
       consultant.set('calendar_connected_at', pbDate(new Date()))
       try {
@@ -382,9 +445,16 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
           consultant.set('google_connected_email', profileRes.json.email)
       } catch (_) {}
       $app.save(consultant)
+      const title = hasRefreshToken
+        ? 'Google Calendar conectado'
+        : 'Google autorizado sem refresh token'
+      const heading = hasRefreshToken ? 'Google Calendar conectado' : 'Reconexão necessária'
+      const message = hasRefreshToken
+        ? 'A agenda foi conectada. Esta janela pode fechar automaticamente.'
+        : 'O Google autorizou o acesso, mas não enviou refresh token. Revogue o acesso do app na sua conta Google e conecte novamente para manter a agenda sincronizada.'
       return e.html(
         200,
-        '<!doctype html><meta charset="utf-8"><title>Google conectado</title><body style="background:#0A0A0A;color:#fff;font-family:Arial,sans-serif;display:grid;place-items:center;min-height:100vh"><main style="max-width:520px;text-align:center"><h1 style="color:#FF6B00">Google Calendar conectado</h1><p>Você já pode voltar ao admin do Agendamentos Elite.</p></main></body>',
+        `<!doctype html><meta charset="utf-8"><title>${title}</title><body style="background:#0A0A0A;color:#fff;font-family:Arial,sans-serif;display:grid;place-items:center;min-height:100vh"><main style="max-width:560px;text-align:center"><h1 style="color:#FF6B00">${heading}</h1><p>${message}</p><p style="color:#888">Você já pode voltar ao admin do Agendamentos Elite.</p></main><script>try{window.opener&&window.opener.postMessage({type:'google-calendar-oauth',consultantId:'${consultant.id}',status:'${hasRefreshToken ? 'connected' : 'missing_refresh_token'}'},'*')}catch(e){}${hasRefreshToken ? 'setTimeout(function(){try{window.close()}catch(e){}},1200)' : ''}</script></body>`,
       )
     } catch (err) {
       return bad(err.message || 'Erro no callback OAuth')
@@ -463,8 +533,15 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
       .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`)
       .join('&')
   const googleConfigReady = () => Boolean(env('GOOGLE_CLIENT_ID') && env('GOOGLE_CLIENT_SECRET'))
+  const hasUsableGoogleToken = (consultant) => {
+    const expiry = parseDate(consultant.get('google_token_expiry'))
+    return Boolean(
+      consultant.get('google_refresh_token') ||
+      (consultant.get('google_access_token') && expiry && expiry.getTime() > Date.now() + 120000),
+    )
+  }
   const googleConnected = (consultant) =>
-    Boolean(googleConfigReady() && consultant.get('google_refresh_token'))
+    Boolean(googleConfigReady() && hasUsableGoogleToken(consultant))
   const tallyApiReady = () => Boolean(env('TALLY_API_KEY'))
   const collectEmailCandidates = (value, emails) => {
     if (value === undefined || value === null) return

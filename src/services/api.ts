@@ -71,6 +71,23 @@ export const startGoogleOAuth = async (consultantId: string) => {
   return data as { url: string }
 }
 
+export const getGoogleCalendarStatus = async (consultantId: string) => {
+  const params = new URLSearchParams({ consultant_id: consultantId })
+  const res = await fetch(`${baseUrl}/backend/v1/google/calendar/status?${params.toString()}`, {
+    headers: { Authorization: pb.authStore.token },
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok || data.error) throw new Error(data.message || data.error || 'Erro ao testar agenda')
+  return data as {
+    google_connected: boolean
+    status: string
+    connected_email?: string
+    calendar_id?: string
+    busy_count_today?: number
+    message?: string
+  }
+}
+
 export const syncTallySubmissions = () =>
   apiRequest<{ enabled: boolean; checked: number; updated: number }>('/backend/v1/tally/sync', {
     method: 'POST',

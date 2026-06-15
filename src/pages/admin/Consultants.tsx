@@ -4,6 +4,7 @@ import { useRealtime } from '@/hooks/use-realtime'
 import {
   createConsultant,
   deleteConsultant,
+  getGoogleCalendarStatus,
   startGoogleOAuth,
   updateConsultant,
 } from '@/services/api'
@@ -28,7 +29,16 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
-import { CalendarCheck, Link2, Pencil, Plus, Trash2, UserCog } from 'lucide-react'
+import {
+  CalendarCheck,
+  Link2,
+  Loader2,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Trash2,
+  UserCog,
+} from 'lucide-react'
 
 const dayLabels = [
   ['monday', 'Segunda'],
@@ -234,6 +244,7 @@ export default function AdminConsultants() {
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<any | null>(null)
   const [connectingId, setConnectingId] = useState<string | null>(null)
+  const [testingId, setTestingId] = useState<string | null>(null)
 
   const loadData = async () => {
     try {
@@ -262,11 +273,72 @@ export default function AdminConsultants() {
     setConnectingId(consultant.id)
     try {
       const data = await startGoogleOAuth(consultant.id)
-      window.location.href = data.url
+      const popup = window.open(data.url, 'google-oauth', 'width=520,height=720')
+      if (!popup) {
+        window.location.href = data.url
+        return
+      }
+
+      toast.info('Conclua a autorização do Google na janela aberta.')
+      let finished = false
+      let timer: ReturnType<typeof window.setInterval> | undefined
+
+      const finish = async (status?: string) => {
+        if (finished) return
+        finished = true
+        if (timer) window.clearInterval(timer)
+        window.removeEventListener('message', onMessage)
+        await loadData()
+        setConnectingId(null)
+        if (status === 'connected') toast.success('Google Calendar conectado e sincronizado.')
+        else if (status === 'missing_refresh_token') {
+          toast.error(
+            'Google autorizou, mas não enviou refresh token. Reconecte após revogar o acesso do app na conta Google.',
+          )
+        } else toast.info('Atualizei o status da conexão do Google.')
+      }
+
+      const onMessage = (event: MessageEvent) => {
+        const data = event.data || {}
+        if (data.type === 'google-calendar-oauth' && data.consultantId === consultant.id) {
+          setTimeout(() => finish(data.status), 500)
+        }
+      }
+
+      window.addEventListener('message', onMessage)
+      let attempts = 0
+      timer = window.setInterval(async () => {
+        attempts += 1
+        try {
+          const fresh = await pb.collection('consultants').getOne(consultant.id)
+          const status = fresh.google_sync_status
+          if (status === 'connected' || status === 'missing_refresh_token') {
+            await finish(status)
+            return
+          }
+        } catch (_) {}
+        if (attempts >= 60 || popup.closed) await finish()
+      }, 2000)
     } catch (err: any) {
-      toast.error(err.message || 'Não foi possível iniciar OAuth do Google')
-    } finally {
       setConnectingId(null)
+      toast.error(err.message || 'Não foi possível iniciar OAuth do Google')
+    }
+  }
+
+  const handleTestGoogle = async (consultant: any) => {
+    setTestingId(consultant.id)
+    try {
+      const status = await getGoogleCalendarStatus(consultant.id)
+      await loadData()
+      if (status.google_connected) {
+        toast.success(
+          `Agenda acessível: ${status.busy_count_today || 0} conflito(s) encontrados hoje.`,
+        )
+      } else toast.error(status.message || 'Agenda Google ainda não está acessível.')
+    } catch (err: any) {
+      toast.error(err.message || 'Não foi possível testar a agenda Google')
+    } finally {
+      setTestingId(null)
     }
   }
 
@@ -337,13 +409,20 @@ export default function AdminConsultants() {
                 <TableHead>WhatsApp</TableHead>
                 <TableHead>Calendário</TableHead>
                 <TableHead>Status Google</TableHead>
-                <TableHead className="w-[220px] text-right">Ações</TableHead>
+                <TableHead className="w-[320px] text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {consultants.map((consultant) => {
-                const connected =
-                  consultant.google_sync_status === 'connected' && consultant.google_refresh_token
+                const googleStatus = consultant.google_sync_status || 'not_connected'
+                const connected = googleStatus === 'connected'
+                const statusLabel = connected
+                  ? 'Conectado'
+                  : googleStatus === 'missing_refresh_token'
+                    ? 'Reconectar'
+                    : googleStatus === 'calendar_error'
+                      ? 'Erro'
+                      : 'Pendente'
                 return (
                   <TableRow key={consultant.id}>
                     <TableCell className="font-medium">{consultant.name}</TableCell>
@@ -357,9 +436,14 @@ export default function AdminConsultants() {
                       {consultant.google_calendar_id || 'primary'}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={connected ? 'default' : 'destructive'}>
-                        {connected ? 'Conectado' : 'Pendente'}
-                      </Badge>
+                      <div className="space-y-1">
+                        <Badge variant={connected ? 'default' : 'destructive'}>{statusLabel}</Badge>
+                        {consultant.google_connected_email && (
+                          <p className="text-xs text-muted-foreground">
+                            {consultant.google_connected_email}
+                          </p>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-2">
@@ -369,12 +453,27 @@ export default function AdminConsultants() {
                           onClick={() => handleConnectGoogle(consultant)}
                           disabled={connectingId === consultant.id}
                         >
-                          {connected ? (
+                          {connectingId === consultant.id ? (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          ) : connected ? (
                             <CalendarCheck className="w-4 h-4 mr-2" />
                           ) : (
                             <Link2 className="w-4 h-4 mr-2" />
                           )}
                           {connected ? 'Reconectar' : 'Conectar'}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleTestGoogle(consultant)}
+                          disabled={testingId === consultant.id || connectingId === consultant.id}
+                        >
+                          {testingId === consultant.id ? (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          ) : (
+                            <RefreshCw className="w-4 h-4 mr-2" />
+                          )}
+                          Testar
                         </Button>
                         <Button
                           size="icon"
