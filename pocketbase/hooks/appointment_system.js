@@ -39,10 +39,6 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
     const value = record && record.get ? Number(record.get(field)) : Number(record && record[field])
     return Number.isFinite(value) && value >= 0 ? value : fallback
   }
-  const nonNegativeNumberValue = (record, field, fallback) => {
-    const value = record && record.get ? Number(record.get(field)) : Number(record && record[field])
-    return Number.isFinite(value) && value >= 0 ? value : fallback
-  }
   const textValue = (record, field, fallback) => {
     const value = record && record.get ? record.get(field) : record && record[field]
     return value === undefined || value === null || value === '' ? fallback : String(value)
@@ -408,6 +404,10 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
   const numberValue = (record, field, fallback) => {
     const value = record && record.get ? Number(record.get(field)) : Number(record && record[field])
     return Number.isFinite(value) && value > 0 ? value : fallback
+  }
+  const nonNegativeNumberValue = (record, field, fallback) => {
+    const value = record && record.get ? Number(record.get(field)) : Number(record && record[field])
+    return Number.isFinite(value) && value >= 0 ? value : fallback
   }
   const textValue = (record, field, fallback) => {
     const value = record && record.get ? record.get(field) : record && record[field]
