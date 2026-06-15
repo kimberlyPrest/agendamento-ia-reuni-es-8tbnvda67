@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
   SelectContent,
@@ -21,7 +22,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { createProgram, updateProgram } from '@/services/api'
-import { extractFieldErrors } from '@/lib/pocketbase/errors'
+import { extractFieldErrors, getErrorMessage } from '@/lib/pocketbase/errors'
 
 const TITLE_PLACEHOLDERS = [
   { label: 'Cliente', token: '{client_name}' },
@@ -120,8 +121,9 @@ export function ProgramForm({ program, onSuccess }: ProgramFormProps) {
         Object.entries(fieldErrors).forEach(([field, msg]) => {
           form.setError(field as keyof ProgramFormValues, { message: msg })
         })
+        toast.error('Preencha os campos corretamente')
       } else {
-        toast.error('Erro ao salvar programa')
+        toast.error(getErrorMessage(error) || 'Erro ao salvar programa')
       }
     }
   }
@@ -387,6 +389,24 @@ export function ProgramForm({ program, onSuccess }: ProgramFormProps) {
             )}
           />
         </div>
+
+        <FormField
+          control={form.control}
+          name="confirmation_message"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Mensagem de confirmação</FormLabel>
+              <FormControl>
+                <Textarea
+                  placeholder="Mensagem exibida ao cliente após o agendamento (opcional)"
+                  className="min-h-[100px] resize-y"
+                  {...field}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
 
         <Button type="submit" disabled={form.formState.isSubmitting} className="w-full sm:w-auto">
           {form.formState.isSubmitting
