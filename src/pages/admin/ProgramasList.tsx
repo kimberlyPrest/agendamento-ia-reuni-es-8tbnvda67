@@ -119,7 +119,12 @@ export default function ProgramasList() {
                       ? 'meses'
                       : 'dias'}
                 </TableCell>
-                <TableCell>{p.min_reschedule_hours || 24}h antes</TableCell>
+                <TableCell>
+                  {p.min_reschedule_hours ?? 24}h antes
+                  <span className="block text-xs text-muted-foreground">
+                    tardia: +{p.late_reschedule_delay_days ?? 7} dias
+                  </span>
+                </TableCell>
                 <TableCell>
                   <div className="flex justify-end gap-2">
                     <Button

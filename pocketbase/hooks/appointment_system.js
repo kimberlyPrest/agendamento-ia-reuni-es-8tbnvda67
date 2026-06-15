@@ -35,6 +35,14 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
     const value = record && record.get ? Number(record.get(field)) : Number(record && record[field])
     return Number.isFinite(value) && value > 0 ? value : fallback
   }
+  const nonNegativeNumberValue = (record, field, fallback) => {
+    const value = record && record.get ? Number(record.get(field)) : Number(record && record[field])
+    return Number.isFinite(value) && value >= 0 ? value : fallback
+  }
+  const nonNegativeNumberValue = (record, field, fallback) => {
+    const value = record && record.get ? Number(record.get(field)) : Number(record && record[field])
+    return Number.isFinite(value) && value >= 0 ? value : fallback
+  }
   const textValue = (record, field, fallback) => {
     const value = record && record.get ? record.get(field) : record && record[field]
     return value === undefined || value === null || value === '' ? fallback : String(value)
@@ -247,10 +255,29 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
           message: 'Agenda Google do consultor ainda não está conectada por OAuth.',
         })
       }
+      let slots = buildSlots(consultant, program, dateStr, ignoreMeetingId)
+      let lateReschedule = false
+      let earliestStart = null
+      const lateDelayDays = nonNegativeNumberValue(program, 'late_reschedule_delay_days', 7)
+      if (ignoreMeetingId) {
+        try {
+          const meeting = $app.findRecordById('meetings', ignoreMeetingId)
+          const meetingStart = recordTime(meeting, 'start_time')
+          const minHours = nonNegativeNumberValue(program, 'min_reschedule_hours', 24)
+          if (meetingStart && meetingStart.getTime() - Date.now() < minHours * 60 * 60 * 1000) {
+            lateReschedule = true
+            earliestStart = addMinutes(new Date(), lateDelayDays * 24 * 60)
+            slots = slots.filter((slot) => parseDate(slot.start_time) >= earliestStart)
+          }
+        } catch (_) {}
+      }
       return e.json(200, {
-        slots: buildSlots(consultant, program, dateStr, ignoreMeetingId),
+        slots,
         google_connected: true,
         timezone: textValue(consultant, 'working_timezone', BR_TIMEZONE),
+        late_reschedule: lateReschedule,
+        earliest_start_time: earliestStart ? earliestStart.toISOString() : '',
+        late_reschedule_delay_days: lateDelayDays,
       })
     } catch (err) {
       return bad(err.message || 'Erro ao buscar horários')
@@ -727,7 +754,7 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
     return (
       start &&
       start.getTime() - Date.now() >=
-        numberValue(program, 'min_reschedule_hours', 24) * 60 * 60 * 1000
+        nonNegativeNumberValue(program, 'min_reschedule_hours', 24) * 60 * 60 * 1000
     )
   }
 
@@ -799,7 +826,9 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
       const consultant = $app.findRecordById('consultants', meeting.get('consultant_id'))
       const program = $app.findRecordById('programs', meeting.get('program_id'))
       if (!canChangeMeeting(meeting, program))
-        return bad('Cancelamentos e remarcações exigem no mínimo 24h de antecedência.')
+        return bad(
+          `Cancelamentos exigem no mínimo ${nonNegativeNumberValue(program, 'min_reschedule_hours', 24)}h de antecedência.`,
+        )
       deleteGoogleEvent(consultant, meeting)
       meeting.set('status', 'cancelled')
       meeting.set('cancelled_at', pbDate(new Date()))
@@ -823,11 +852,17 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
       const client = $app.findRecordById('clients', meeting.get('client_id'))
       const consultant = $app.findRecordById('consultants', meeting.get('consultant_id'))
       const program = $app.findRecordById('programs', meeting.get('program_id'))
-      if (!canChangeMeeting(meeting, program))
-        return bad('Cancelamentos e remarcações exigem no mínimo 24h de antecedência.')
       const start = parseDate(body.start_time)
       const end = parseDate(body.end_time)
       if (!start || !end) return bad('Horário inválido')
+      if (!canChangeMeeting(meeting, program)) {
+        const lateDelayDays = nonNegativeNumberValue(program, 'late_reschedule_delay_days', 7)
+        const earliestStart = addMinutes(new Date(), lateDelayDays * 24 * 60)
+        if (start < earliestStart)
+          return bad(
+            `Como a remarcação passou do prazo mínimo, escolha um novo horário a partir de ${lateDelayDays} dias.`,
+          )
+      }
       const ruleError = assertBusinessRules(client, consultant, program, start, end, meeting.id)
       if (ruleError) return bad(ruleError)
       const title =

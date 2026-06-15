@@ -31,7 +31,29 @@ export default function ClientStatus() {
   const program = client.expand?.program_id || upcomingMeeting?.expand?.program_id
   const consultant = client.expand?.consultant_id || upcomingMeeting?.expand?.consultant_id
   const firstName = client.name?.split(' ')[0] || client.name
-  const minRescheduleHours = Number(program?.min_reschedule_hours || 24)
+  const minRescheduleHours = Number(program?.min_reschedule_hours ?? 24)
+  const lateRescheduleDelayDays = Number(program?.late_reschedule_delay_days ?? 7)
+  const lateRescheduleUnit = lateRescheduleDelayDays === 1 ? 'dia' : 'dias'
+  const lateRescheduleText =
+    lateRescheduleDelayDays > 0
+      ? `a partir de ${lateRescheduleDelayDays} ${lateRescheduleUnit}`
+      : 'imediatamente'
+  const tallyTemplate = program?.tally_form_template || program?.tally_form_url || ''
+  const replaceToken = (value: string, token: string, replacement: string) =>
+    value.split(token).join(replacement)
+  let tallyUrl = tallyTemplate
+  const encodedEmail = encodeURIComponent(client.email || '')
+  const encodedName = encodeURIComponent(client.name || '')
+  const encodedFirstName = encodeURIComponent(firstName || '')
+  ;['{clients_email}', '{client_email}', '{email}'].forEach((token) => {
+    tallyUrl = replaceToken(tallyUrl, token, encodedEmail)
+  })
+  ;['{clients_name}', '{client_name}'].forEach((token) => {
+    tallyUrl = replaceToken(tallyUrl, token, encodedName)
+  })
+  ;['{firstname}', '{first_name}'].forEach((token) => {
+    tallyUrl = replaceToken(tallyUrl, token, encodedFirstName)
+  })
 
   const handleRefresh = async () => {
     setFeedback('')
@@ -80,13 +102,8 @@ export default function ClientStatus() {
               atender com contexto.
             </p>
             <div className="flex flex-col gap-3 pt-2">
-              <Button
-                asChild
-                size="lg"
-                className="w-full text-base"
-                disabled={!program?.tally_form_url}
-              >
-                <a href={program?.tally_form_url || '#'} target="_blank" rel="noreferrer">
+              <Button asChild size="lg" className="w-full text-base" disabled={!tallyUrl}>
+                <a href={tallyUrl || '#'} target="_blank" rel="noreferrer">
                   Responder formulário <ExternalLink className="w-4 h-4 ml-2" />
                 </a>
               </Button>
@@ -188,8 +205,9 @@ export default function ClientStatus() {
 
             {!canChange && (
               <p className="text-sm text-[#FFB800] bg-[#FFB800]/10 border border-[#FFB800]/20 rounded-md p-3 text-center">
-                Remarcações ou cancelamentos só ficam disponíveis com no mínimo {minRescheduleHours}
-                h de antecedência. Fale diretamente com seu consultor se for urgente.
+                Cancelamentos exigem no mínimo {minRescheduleHours}h de antecedência. Você ainda
+                pode remarcar, mas o novo horário precisa ser {lateRescheduleText}. Fale diretamente
+                com seu consultor se for urgente.
               </p>
             )}
             {feedback && <p className="text-sm text-muted-foreground text-center">{feedback}</p>}
@@ -199,7 +217,7 @@ export default function ClientStatus() {
                 variant="outline"
                 className="w-full"
                 onClick={() => navigate(`/schedule?reschedule=${upcomingMeeting.id}`)}
-                disabled={!canChange || cancelling}
+                disabled={cancelling}
               >
                 Remarcar
               </Button>

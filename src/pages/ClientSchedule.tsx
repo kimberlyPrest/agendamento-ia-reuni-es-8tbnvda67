@@ -5,7 +5,7 @@ import { bookMeeting, getAvailableSlots, rescheduleMeeting } from '@/services/ap
 import { Calendar } from '@/components/ui/calendar'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { format } from 'date-fns'
+import { differenceInHours, format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Clock, ArrowLeft, AlertCircle } from 'lucide-react'
 
@@ -22,10 +22,26 @@ export default function ClientSchedule() {
   const [searchParams] = useSearchParams()
   const rescheduleId = searchParams.get('reschedule')
   const isRescheduling = Boolean(rescheduleId)
-  const initialDate =
-    isRescheduling && upcomingMeeting?.start_time
-      ? new Date(upcomingMeeting.start_time)
-      : new Date()
+  const program = client?.expand?.program_id
+  const consultant = client?.expand?.consultant_id
+  const minRescheduleHours = Number(program?.min_reschedule_hours ?? 24)
+  const lateRescheduleDelayDays = Number(program?.late_reschedule_delay_days ?? 7)
+  const lateRescheduleUnit = lateRescheduleDelayDays === 1 ? 'dia' : 'dias'
+  const existingMeetingDate =
+    isRescheduling && upcomingMeeting?.start_time ? new Date(upcomingMeeting.start_time) : null
+  const isLateReschedule = existingMeetingDate
+    ? differenceInHours(existingMeetingDate, new Date()) < minRescheduleHours
+    : false
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const minDate = new Date(today)
+  if (isLateReschedule) minDate.setDate(minDate.getDate() + lateRescheduleDelayDays)
+  const minDateTime = minDate.getTime()
+  const initialDate = isLateReschedule
+    ? minDate
+    : isRescheduling && existingMeetingDate
+      ? existingMeetingDate
+      : today
 
   const [date, setDate] = useState<Date | undefined>(initialDate)
   const [slots, setSlots] = useState<Slot[]>([])
@@ -39,9 +55,13 @@ export default function ClientSchedule() {
   }, [client, navigate])
 
   useEffect(() => {
+    if (isLateReschedule && date && date.getTime() < minDateTime) {
+      setDate(new Date(minDateTime))
+      return
+    }
     if (date && client?.consultant_id) fetchSlots(date)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [date, client?.consultant_id, rescheduleId])
+  }, [date, client?.consultant_id, rescheduleId, isLateReschedule, minDateTime])
 
   const fetchSlots = async (selectedDate: Date) => {
     if (!client?.consultant_id) return
@@ -101,8 +121,6 @@ export default function ClientSchedule() {
 
   if (!client) return null
 
-  const program = client.expand?.program_id
-  const consultant = client.expand?.consultant_id
   const bookingWindow = Number(program?.booking_window_days || 60)
   const maxDate = new Date()
   maxDate.setDate(maxDate.getDate() + bookingWindow)
@@ -123,6 +141,16 @@ export default function ClientSchedule() {
         </p>
       </div>
 
+      {isLateReschedule && (
+        <div className="text-sm text-[#FFB800] bg-[#FFB800]/10 border border-[#FFB800]/20 rounded-md p-3 flex gap-2">
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+          <span>
+            Como a remarcação passou do prazo mínimo, os novos horários aparecem a partir de{' '}
+            {lateRescheduleDelayDays} {lateRescheduleUnit}.
+          </span>
+        </div>
+      )}
+
       <Card className="bg-card border-border overflow-hidden shadow-none">
         <div className="flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-border">
           <div className="p-4 flex justify-center">
@@ -131,7 +159,7 @@ export default function ClientSchedule() {
               selected={date}
               onSelect={setDate}
               className="bg-transparent"
-              disabled={(day) => day < new Date(new Date().setHours(0, 0, 0, 0)) || day > maxDate}
+              disabled={(day) => day < minDate || day > maxDate}
               locale={ptBR}
             />
           </div>

@@ -28,13 +28,14 @@ const programSchema = z.object({
   total_meetings: z.coerce.number().min(1, 'Obrigatório ter pelo menos 1 reunião'),
   meeting_duration: z.coerce.number().min(15, 'Use pelo menos 15 minutos'),
   title_template: z.string().optional(),
-  tally_form_url: z.string().url('URL inválida').optional().or(z.literal('')),
+  tally_form_template: z.string().min(1, 'Informe a URL do Tally').optional().or(z.literal('')),
   require_tally: z.boolean().default(true),
   allow_concurrent: z.boolean().default(false),
   max_future_meetings: z.coerce.number().min(1).default(1),
   min_interval_days: z.coerce.number().min(0).default(0),
   min_interval_unit: z.enum(['days', 'weeks', 'months']).default('days'),
   min_reschedule_hours: z.coerce.number().min(0).default(24),
+  late_reschedule_delay_days: z.coerce.number().min(0).default(7),
   booking_window_days: z.coerce.number().min(1).default(60),
   buffer_before_minutes: z.coerce.number().min(0).default(0),
   buffer_after_minutes: z.coerce.number().min(0).default(0),
@@ -56,13 +57,14 @@ export function ProgramForm({ program, onSuccess }: ProgramFormProps) {
       total_meetings: program?.total_meetings || 1,
       meeting_duration: program?.meeting_duration || 60,
       title_template: program?.title_template || 'Consultoria {meeting_number} - {client_name}',
-      tally_form_url: program?.tally_form_url || '',
+      tally_form_template: program?.tally_form_template || program?.tally_form_url || '',
       require_tally: program?.require_tally ?? true,
       allow_concurrent: program?.allow_concurrent ?? false,
       max_future_meetings: program?.max_future_meetings || 1,
       min_interval_days: program?.min_interval_days || 0,
       min_interval_unit: program?.min_interval_unit || 'days',
-      min_reschedule_hours: program?.min_reschedule_hours || 24,
+      min_reschedule_hours: program?.min_reschedule_hours ?? 24,
+      late_reschedule_delay_days: program?.late_reschedule_delay_days ?? 7,
       booking_window_days: program?.booking_window_days || 60,
       buffer_before_minutes: program?.buffer_before_minutes || 0,
       buffer_after_minutes: program?.buffer_after_minutes || 0,
@@ -72,7 +74,10 @@ export function ProgramForm({ program, onSuccess }: ProgramFormProps) {
 
   const onSubmit = async (data: ProgramFormValues) => {
     try {
-      const payload = { ...data, tally_form_url: data.tally_form_url || '' }
+      const payload = {
+        ...data,
+        tally_form_template: data.tally_form_template || '',
+      }
       if (program?.id) await updateProgram(program.id, payload)
       else await createProgram(payload)
       toast.success(program?.id ? 'Programa atualizado.' : 'Programa criado.')
@@ -150,19 +155,19 @@ export function ProgramForm({ program, onSuccess }: ProgramFormProps) {
 
         <FormField
           control={form.control}
-          name="tally_form_url"
+          name="tally_form_template"
           render={({ field }) => (
             <FormItem>
               <FormLabel>URL do formulário Tally</FormLabel>
               <FormControl>
-                <Input placeholder="https://tally.so/r/..." {...field} />
+                <Input placeholder="https://tally.so/r/...?...={clients_email}" {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
           )}
         />
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
           <FormField
             control={form.control}
             name="min_interval_days"
@@ -204,6 +209,19 @@ export function ProgramForm({ program, onSuccess }: ProgramFormProps) {
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Antecedência remarcação (h)</FormLabel>
+                <FormControl>
+                  <Input type="number" min={0} {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="late_reschedule_delay_days"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Prazo remarcação tardia (dias)</FormLabel>
                 <FormControl>
                   <Input type="number" min={0} {...field} />
                 </FormControl>

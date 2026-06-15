@@ -14,6 +14,13 @@ Este projeto foi criado de ponta a ponta com o [Skip](https://goskip.dev).
 - **Zod** - Validação de schemas TypeScript-first
 - **Recharts** - Biblioteca de gráficos para React
 
+## Integrações e regras de agendamento
+
+- Google Calendar usa OAuth do Google Console. Configure `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` e `GOOGLE_REDIRECT_URI` no ambiente do Skip, depois conecte cada consultor no admin.
+- Tally deve ser salvo no programa como template de URL em `tally_form_template`. Placeholders aceitos no link: `{clients_email}`, `{client_email}`, `{email}`, `{clients_name}`, `{client_name}`, `{firstname}` e `{first_name}`.
+- A antecedência mínima de cancelamento/remarcação fica em `min_reschedule_hours`.
+- Se o cliente tentar remarcar dentro desse prazo, a remarcação continua possível, mas o novo horário só aparece a partir de `late_reschedule_delay_days` dias depois. Cancelamento dentro do prazo segue bloqueado.
+
 ## 📋 Pré-requisitos
 
 - Node.js 18+
