@@ -1,9 +1,12 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react'
+import { authClientByEmail } from '@/services/api'
 
 interface ClientContextType {
   client: any | null
   upcomingMeeting: any | null
-  setClientData: (client: any, upcoming: any) => void
+  lastMeeting: any | null
+  stats: any | null
+  setClientData: (client: any, upcoming: any, stats?: any, lastMeeting?: any) => void
   clear: () => void
   refreshClient: () => Promise<void>
 }
@@ -19,37 +22,42 @@ export function useClientStore() {
 export function ClientStoreProvider({ children }: { children: ReactNode }) {
   const [client, setClient] = useState<any | null>(null)
   const [upcomingMeeting, setUpcomingMeeting] = useState<any | null>(null)
+  const [lastMeeting, setLastMeeting] = useState<any | null>(null)
+  const [stats, setStats] = useState<any | null>(null)
 
-  const setClientData = (c: any, u: any) => {
+  const setClientData = (c: any, upcoming: any, nextStats?: any, last?: any) => {
     setClient(c)
-    setUpcomingMeeting(u)
+    setUpcomingMeeting(upcoming)
+    setStats(nextStats || null)
+    setLastMeeting(last || null)
   }
 
   const clear = () => {
     setClient(null)
     setUpcomingMeeting(null)
+    setStats(null)
+    setLastMeeting(null)
   }
 
   const refreshClient = async () => {
     if (!client?.email) return
-    try {
-      const res = await fetch(`${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/client/auth`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: client.email }),
-      })
-      if (res.ok) {
-        const data = await res.json()
-        setClientData(data.client, data.upcoming)
-      }
-    } catch (err) {
-      console.error(err)
-    }
+    const data = await authClientByEmail(client.email)
+    setClientData(data.client, data.upcoming || data.upcomingMeeting, data.stats, data.lastMeeting)
   }
 
   return React.createElement(
     ClientContext.Provider,
-    { value: { client, upcomingMeeting, setClientData, clear, refreshClient } },
+    {
+      value: {
+        client,
+        upcomingMeeting,
+        lastMeeting,
+        stats,
+        setClientData,
+        clear,
+        refreshClient,
+      },
+    },
     children,
   )
 }

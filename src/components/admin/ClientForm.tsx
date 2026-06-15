@@ -1,7 +1,7 @@
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
-import pb from '@/lib/pocketbase/client'
+import { createClient, updateClient } from '@/services/api'
 import { extractFieldErrors } from '@/lib/pocketbase/errors'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -22,78 +22,72 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 
 const formSchema = z.object({
   name: z.string().min(1, 'Nome é obrigatório'),
   email: z.string().email('E-mail inválido'),
   program_id: z.string().min(1, 'Programa é obrigatório'),
   consultant_id: z.string().min(1, 'Consultor é obrigatório'),
-  current_meeting_number: z.coerce.number().min(0, 'Número inválido').default(1),
+  current_meeting_number: z.coerce.number().min(1, 'Número inválido').default(1),
   form_answered: z.boolean().default(false),
+  extra_meetings: z.coerce.number().min(0).default(0),
+  meeting_limit_override: z.coerce.number().min(0).default(0),
+  notes: z.string().optional(),
 })
 
 interface ClientFormProps {
+  client?: any
   programs: any[]
   consultants: any[]
   onSuccess: () => void
 }
 
-export function ClientForm({ programs, consultants, onSuccess }: ClientFormProps) {
+export function ClientForm({ client, programs, consultants, onSuccess }: ClientFormProps) {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      name: '',
-      email: '',
-      program_id: '',
-      consultant_id: '',
-      current_meeting_number: 1,
-      form_answered: false,
+      name: client?.name || '',
+      email: client?.email || '',
+      program_id: client?.program_id || '',
+      consultant_id: client?.consultant_id || '',
+      current_meeting_number: client?.current_meeting_number || 1,
+      form_answered: client?.form_answered || false,
+      extra_meetings: client?.extra_meetings || 0,
+      meeting_limit_override: client?.meeting_limit_override || 0,
+      notes: client?.notes || '',
     },
   })
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     try {
-      await pb.collection('clients').create(values)
-      toast.success('Cliente adicionado com sucesso!', {
-        style: { backgroundColor: '#00C851', color: '#fff', border: 'none' },
-      })
+      const payload = { ...values, email: values.email.trim().toLowerCase() }
+      if (client?.id) await updateClient(client.id, payload)
+      else await createClient(payload)
+      toast.success(client?.id ? 'Cliente atualizado.' : 'Cliente adicionado.')
       onSuccess()
     } catch (err: unknown) {
       const fieldErrors = extractFieldErrors(err)
       if (fieldErrors.email) {
         form.setError('email', { message: 'E-mail já está em uso.' })
-        toast.error('Erro: E-mail já está em uso.', {
-          style: { backgroundColor: '#FF3B3B', color: '#fff', border: 'none' },
-        })
-      } else {
-        toast.error('Ocorreu um erro ao adicionar o cliente.', {
-          style: { backgroundColor: '#FF3B3B', color: '#fff', border: 'none' },
-        })
       }
+      toast.error(fieldErrors.email ? 'E-mail já está em uso.' : 'Erro ao salvar cliente.')
     }
   }
 
   return (
     <Form {...form}>
-      <form
-        onSubmit={form.handleSubmit(onSubmit)}
-        className="space-y-4"
-        style={{ fontFamily: 'DM Sans, sans-serif' }}
-      >
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
         <FormField
           control={form.control}
           name="name"
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="text-zinc-300">Nome</FormLabel>
+              <FormLabel>Nome</FormLabel>
               <FormControl>
-                <Input
-                  placeholder="Nome do cliente"
-                  className="bg-zinc-900 border-zinc-800 text-white"
-                  {...field}
-                />
+                <Input placeholder="Nome do cliente" {...field} />
               </FormControl>
-              <FormMessage className="text-[#FF3B3B]" />
+              <FormMessage />
             </FormItem>
           )}
         />
@@ -103,16 +97,11 @@ export function ClientForm({ programs, consultants, onSuccess }: ClientFormProps
           name="email"
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="text-zinc-300">E-mail</FormLabel>
+              <FormLabel>E-mail de compra</FormLabel>
               <FormControl>
-                <Input
-                  type="email"
-                  placeholder="email@exemplo.com"
-                  className="bg-zinc-900 border-zinc-800 text-white"
-                  {...field}
-                />
+                <Input type="email" placeholder="email@exemplo.com" {...field} />
               </FormControl>
-              <FormMessage className="text-[#FF3B3B]" />
+              <FormMessage />
             </FormItem>
           )}
         />
@@ -123,26 +112,22 @@ export function ClientForm({ programs, consultants, onSuccess }: ClientFormProps
             name="program_id"
             render={({ field }) => (
               <FormItem>
-                <FormLabel className="text-zinc-300">Programa</FormLabel>
+                <FormLabel>Programa</FormLabel>
                 <Select onValueChange={field.onChange} defaultValue={field.value}>
                   <FormControl>
-                    <SelectTrigger className="bg-zinc-900 border-zinc-800 text-white">
+                    <SelectTrigger>
                       <SelectValue placeholder="Selecione" />
                     </SelectTrigger>
                   </FormControl>
-                  <SelectContent className="bg-zinc-900 border-zinc-800 text-white">
+                  <SelectContent>
                     {programs.map((p) => (
-                      <SelectItem
-                        key={p.id}
-                        value={p.id}
-                        className="focus:bg-zinc-800 focus:text-white cursor-pointer"
-                      >
+                      <SelectItem key={p.id} value={p.id}>
                         {p.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                <FormMessage className="text-[#FF3B3B]" />
+                <FormMessage />
               </FormItem>
             )}
           />
@@ -152,76 +137,106 @@ export function ClientForm({ programs, consultants, onSuccess }: ClientFormProps
             name="consultant_id"
             render={({ field }) => (
               <FormItem>
-                <FormLabel className="text-zinc-300">Consultor</FormLabel>
+                <FormLabel>Consultor</FormLabel>
                 <Select onValueChange={field.onChange} defaultValue={field.value}>
                   <FormControl>
-                    <SelectTrigger className="bg-zinc-900 border-zinc-800 text-white">
+                    <SelectTrigger>
                       <SelectValue placeholder="Selecione" />
                     </SelectTrigger>
                   </FormControl>
-                  <SelectContent className="bg-zinc-900 border-zinc-800 text-white">
+                  <SelectContent>
                     {consultants.map((c) => (
-                      <SelectItem
-                        key={c.id}
-                        value={c.id}
-                        className="focus:bg-zinc-800 focus:text-white cursor-pointer"
-                      >
+                      <SelectItem key={c.id} value={c.id}>
                         {c.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                <FormMessage className="text-[#FF3B3B]" />
+                <FormMessage />
               </FormItem>
             )}
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-4 items-end">
+        <div className="grid grid-cols-3 gap-4 items-end">
           <FormField
             control={form.control}
             name="current_meeting_number"
             render={({ field }) => (
               <FormItem>
-                <FormLabel className="text-zinc-300">Reunião Atual</FormLabel>
+                <FormLabel>Próxima reunião</FormLabel>
                 <FormControl>
-                  <Input
-                    type="number"
-                    min={1}
-                    className="bg-zinc-900 border-zinc-800 text-white"
-                    {...field}
-                  />
+                  <Input type="number" min={1} {...field} />
                 </FormControl>
-                <FormMessage className="text-[#FF3B3B]" />
+                <FormMessage />
               </FormItem>
             )}
           />
-
           <FormField
             control={form.control}
-            name="form_answered"
+            name="extra_meetings"
             render={({ field }) => (
-              <FormItem className="flex flex-row items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 h-10 mb-0.5">
-                <FormLabel className="text-zinc-300 text-sm font-normal">
-                  Tally Respondido
-                </FormLabel>
+              <FormItem>
+                <FormLabel>Calls extras</FormLabel>
                 <FormControl>
-                  <Switch
-                    checked={field.value}
-                    onCheckedChange={field.onChange}
-                    className="data-[state=checked]:bg-[#FF6B00]"
-                  />
+                  <Input type="number" min={0} {...field} />
                 </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="meeting_limit_override"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Limite específico</FormLabel>
+                <FormControl>
+                  <Input type="number" min={0} placeholder="0 = regra" {...field} />
+                </FormControl>
+                <FormMessage />
               </FormItem>
             )}
           />
         </div>
 
-        <Button
-          type="submit"
-          className="w-full bg-[#FF6B00] text-[#FFFFFF] hover:bg-[#FF6B00]/90 rounded-[8px] mt-6"
-        >
-          Salvar Cliente
+        <FormField
+          control={form.control}
+          name="form_answered"
+          render={({ field }) => (
+            <FormItem className="flex flex-row items-center justify-between rounded-lg border border-border bg-secondary px-3 py-2">
+              <FormLabel className="text-sm font-normal">Tally respondido</FormLabel>
+              <FormControl>
+                <Switch checked={field.value} onCheckedChange={field.onChange} />
+              </FormControl>
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="notes"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Notas internas</FormLabel>
+              <FormControl>
+                <Textarea
+                  rows={3}
+                  placeholder="Exceções, contexto comercial, observações..."
+                  {...field}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <Button type="submit" className="w-full" disabled={form.formState.isSubmitting}>
+          {form.formState.isSubmitting
+            ? 'Salvando...'
+            : client?.id
+              ? 'Salvar alterações'
+              : 'Salvar cliente'}
         </Button>
       </form>
     </Form>

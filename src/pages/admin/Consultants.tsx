@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
-import { z } from 'zod'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
-import { extractFieldErrors } from '@/lib/pocketbase/errors'
-
+import {
+  createConsultant,
+  deleteConsultant,
+  startGoogleOAuth,
+  updateConsultant,
+} from '@/services/api'
 import {
   Table,
   TableBody,
@@ -14,6 +17,7 @@ import {
 } from '@/components/ui/table'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import {
   Dialog,
   DialogContent,
@@ -23,57 +27,219 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
-import { UserCog, Plus } from 'lucide-react'
+import { CalendarCheck, Link2, Pencil, Plus, Trash2, UserCog } from 'lucide-react'
 
-interface Consultant {
-  id: string
-  name: string
-  email: string
-  whatsapp_number: string
-  google_calendar_id: string
-  working_hours: any
+const dayLabels = [
+  ['monday', 'Segunda'],
+  ['tuesday', 'Terça'],
+  ['wednesday', 'Quarta'],
+  ['thursday', 'Quinta'],
+  ['friday', 'Sexta'],
+  ['saturday', 'Sábado'],
+  ['sunday', 'Domingo'],
+]
+
+const defaultWorkingHours = {
+  monday: [
+    { start: '09:00', end: '12:00' },
+    { start: '14:00', end: '18:00' },
+  ],
+  tuesday: [
+    { start: '09:00', end: '12:00' },
+    { start: '14:00', end: '18:00' },
+  ],
+  wednesday: [
+    { start: '09:00', end: '12:00' },
+    { start: '14:00', end: '18:00' },
+  ],
+  thursday: [
+    { start: '09:00', end: '12:00' },
+    { start: '14:00', end: '18:00' },
+  ],
+  friday: [
+    { start: '09:00', end: '12:00' },
+    { start: '14:00', end: '18:00' },
+  ],
+  saturday: [],
+  sunday: [],
 }
 
-const consultantSchema = z.object({
-  name: z.string().trim().min(1, 'Nome é obrigatório'),
-  email: z.string().trim().email('Email inválido').or(z.literal('')),
-  whatsapp_number: z.string().trim().optional(),
-  google_calendar_id: z.string().trim().optional(),
-  working_hours: z.string().refine((val) => {
-    if (!val.trim()) return true
+function normalizeWorkingHours(value: any) {
+  if (!value) return defaultWorkingHours
+  if (typeof value === 'string') {
     try {
-      JSON.parse(val)
-      return true
-    } catch {
-      return false
+      value = JSON.parse(value)
+    } catch (_) {
+      return defaultWorkingHours
     }
-  }, 'JSON de horas de trabalho inválido'),
-})
+  }
+  return { ...defaultWorkingHours, ...value }
+}
+
+function ConsultantForm({ consultant, onSuccess }: { consultant?: any; onSuccess: () => void }) {
+  const [form, setForm] = useState({
+    name: consultant?.name || '',
+    email: consultant?.email || '',
+    whatsapp_number: consultant?.whatsapp_number || '',
+    google_calendar_id: consultant?.google_calendar_id || 'primary',
+    working_timezone: consultant?.working_timezone || 'America/Sao_Paulo',
+  })
+  const [workingHours, setWorkingHours] = useState<any>(
+    normalizeWorkingHours(consultant?.working_hours),
+  )
+  const [submitting, setSubmitting] = useState(false)
+
+  const updateWindow = (day: string, index: number, field: 'start' | 'end', value: string) => {
+    setWorkingHours((current: any) => ({
+      ...current,
+      [day]: current[day].map((window: any, i: number) =>
+        i === index ? { ...window, [field]: value } : window,
+      ),
+    }))
+  }
+
+  const addWindow = (day: string) => {
+    setWorkingHours((current: any) => ({
+      ...current,
+      [day]: [...(current[day] || []), { start: '09:00', end: '18:00' }],
+    }))
+  }
+
+  const removeWindow = (day: string, index: number) => {
+    setWorkingHours((current: any) => ({
+      ...current,
+      [day]: current[day].filter((_: any, i: number) => i !== index),
+    }))
+  }
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!form.name.trim()) return toast.error('Nome é obrigatório')
+    setSubmitting(true)
+    try {
+      const payload = {
+        ...form,
+        email: form.email.trim().toLowerCase(),
+        whatsapp_number: form.whatsapp_number.replace(/\D/g, ''),
+        google_calendar_id: form.google_calendar_id || 'primary',
+        working_hours: workingHours,
+      }
+      if (consultant?.id) await updateConsultant(consultant.id, payload)
+      else await createConsultant(payload)
+      toast.success(consultant?.id ? 'Consultor atualizado.' : 'Consultor criado.')
+      onSuccess()
+    } catch (_) {
+      toast.error('Erro ao salvar consultor')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label>Nome</Label>
+          <Input
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            placeholder="Nome do especialista"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Email do consultor</Label>
+          <Input
+            type="email"
+            value={form.email}
+            onChange={(e) => setForm({ ...form, email: e.target.value })}
+            placeholder="consultor@empresa.com"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>WhatsApp</Label>
+          <Input
+            value={form.whatsapp_number}
+            onChange={(e) => setForm({ ...form, whatsapp_number: e.target.value })}
+            placeholder="5511999999999"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>ID do Google Calendar</Label>
+          <Input
+            value={form.google_calendar_id}
+            onChange={(e) => setForm({ ...form, google_calendar_id: e.target.value })}
+            placeholder="primary ou id@group.calendar.google.com"
+          />
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <div>
+          <Label>Horários de atendimento</Label>
+          <p className="text-xs text-muted-foreground mt-1">
+            O sistema usa estas janelas e remove automaticamente conflitos encontrados no Google
+            Calendar.
+          </p>
+        </div>
+        <div className="space-y-3 rounded-xl border border-border bg-secondary p-3">
+          {dayLabels.map(([day, label]) => (
+            <div
+              key={day}
+              className="grid grid-cols-[88px_1fr] gap-3 border-b border-border/60 pb-3 last:border-b-0 last:pb-0"
+            >
+              <div className="pt-2 text-sm text-muted-foreground">{label}</div>
+              <div className="space-y-2">
+                {(workingHours[day] || []).map((window: any, index: number) => (
+                  <div key={`${day}-${index}`} className="grid grid-cols-[1fr_1fr_auto] gap-2">
+                    <Input
+                      type="time"
+                      value={window.start}
+                      onChange={(e) => updateWindow(day, index, 'start', e.target.value)}
+                    />
+                    <Input
+                      type="time"
+                      value={window.end}
+                      onChange={(e) => updateWindow(day, index, 'end', e.target.value)}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="text-destructive"
+                      onClick={() => removeWindow(day, index)}
+                    >
+                      Remover
+                    </Button>
+                  </div>
+                ))}
+                <Button type="button" variant="outline" size="sm" onClick={() => addWindow(day)}>
+                  Adicionar janela
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <Button type="submit" disabled={submitting} className="w-full sm:w-auto">
+        {submitting ? 'Salvando...' : consultant?.id ? 'Salvar alterações' : 'Salvar consultor'}
+      </Button>
+    </form>
+  )
+}
 
 export default function AdminConsultants() {
-  const [consultants, setConsultants] = useState<Consultant[]>([])
+  const [consultants, setConsultants] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
-
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    whatsapp_number: '',
-    google_calendar_id: '',
-    working_hours: '{\n  "monday": ["09:00-18:00"],\n  "tuesday": ["09:00-18:00"]\n}',
-  })
-  const [errors, setErrors] = useState<Record<string, string>>({})
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [editing, setEditing] = useState<any | null>(null)
+  const [connectingId, setConnectingId] = useState<string | null>(null)
 
   const loadData = async () => {
     try {
-      const records = await pb.collection('consultants').getFullList<Consultant>({
-        sort: '-created',
-      })
+      const records = await pb.collection('consultants').getFullList({ sort: 'name' })
       setConsultants(records)
-    } catch (err) {
+    } catch (_) {
       toast.error('Erro ao carregar consultores')
     } finally {
       setLoading(false)
@@ -84,215 +250,155 @@ export default function AdminConsultants() {
     loadData()
   }, [])
 
-  useRealtime('consultants', () => {
-    loadData()
-  })
+  useRealtime('consultants', () => loadData())
 
-  const handleInputChange = (field: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }))
-    if (errors[field]) {
-      setErrors((prev) => ({ ...prev, [field]: '' }))
+  const closeDialog = () => {
+    setOpen(false)
+    setEditing(null)
+    loadData()
+  }
+
+  const handleConnectGoogle = async (consultant: any) => {
+    setConnectingId(consultant.id)
+    try {
+      const data = await startGoogleOAuth(consultant.id)
+      window.location.href = data.url
+    } catch (err: any) {
+      toast.error(err.message || 'Não foi possível iniciar OAuth do Google')
+    } finally {
+      setConnectingId(null)
     }
   }
 
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setErrors({})
-    setIsSubmitting(true)
-
-    const parsed = consultantSchema.safeParse(formData)
-    if (!parsed.success) {
-      const fieldErrs: Record<string, string> = {}
-      parsed.error.issues.forEach((issue) => {
-        fieldErrs[issue.path[0]] = issue.message
-      })
-      setErrors(fieldErrs)
-      setIsSubmitting(false)
-      return
-    }
-
-    const validData = parsed.data
-    let parsedWorkingHours = null
-    if (validData.working_hours && validData.working_hours.trim()) {
-      parsedWorkingHours = JSON.parse(validData.working_hours)
-    }
-
+  const handleDelete = async (consultant: any) => {
+    if (!window.confirm(`Excluir ${consultant.name}?`)) return
     try {
-      await pb.collection('consultants').create({
-        name: validData.name,
-        email: validData.email,
-        whatsapp_number: validData.whatsapp_number,
-        google_calendar_id: validData.google_calendar_id,
-        working_hours: parsedWorkingHours,
-      })
-      toast.success('Consultor adicionado com sucesso!')
-      setOpen(false)
-      setFormData({
-        name: '',
-        email: '',
-        whatsapp_number: '',
-        google_calendar_id: '',
-        working_hours: '{\n  "monday": ["09:00-18:00"],\n  "tuesday": ["09:00-18:00"]\n}',
-      })
-    } catch (err) {
-      const fieldErrors = extractFieldErrors(err)
-      if (Object.keys(fieldErrors).length > 0) {
-        setErrors(fieldErrors)
-      } else {
-        toast.error('Erro ao criar consultor')
-      }
-    } finally {
-      setIsSubmitting(false)
+      await deleteConsultant(consultant.id)
+      toast.success('Consultor excluído.')
+      loadData()
+    } catch (_) {
+      toast.error('Não foi possível excluir. Verifique clientes vinculados.')
     }
   }
 
   return (
-    <div className="space-y-6 animate-fade-in-up bg-[#0A0A0A] text-[#FFFFFF] min-h-full p-2">
-      <div className="flex justify-between items-center">
+    <div className="space-y-6 animate-fade-in-up">
+      <div className="flex flex-col sm:flex-row justify-between gap-4 sm:items-center">
         <div>
           <h2 className="font-display text-2xl font-bold">Consultores</h2>
-          <p className="text-muted-foreground font-sans mt-1">
-            Gerencie os especialistas integrados ao sistema.
+          <p className="text-muted-foreground text-sm mt-1">
+            Conecte Google Calendar por OAuth e defina os horários de atendimento.
           </p>
         </div>
 
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog
+          open={open}
+          onOpenChange={(next) => {
+            setOpen(next)
+            if (!next) setEditing(null)
+          }}
+        >
           <DialogTrigger asChild>
-            <Button className="bg-[#FF6B00] hover:bg-[#E66000] text-white font-sans">
-              <Plus className="w-4 h-4 mr-2" /> Novo Consultor
+            <Button onClick={() => setEditing(null)}>
+              <Plus className="w-4 h-4 mr-2" /> Novo consultor
             </Button>
           </DialogTrigger>
-          <DialogContent className="bg-[#141414] border-[#2A2A2A] text-white sm:max-w-[500px]">
+          <DialogContent className="bg-card border-border text-white sm:max-w-[820px]">
             <DialogHeader>
-              <DialogTitle className="font-display">Adicionar Consultor</DialogTitle>
+              <DialogTitle className="font-display">
+                {editing ? 'Editar consultor' : 'Adicionar consultor'}
+              </DialogTitle>
             </DialogHeader>
-            <form onSubmit={onSubmit} className="space-y-4 pt-4 font-sans">
-              <div className="space-y-2">
-                <Label htmlFor="name">Nome *</Label>
-                <Input
-                  id="name"
-                  placeholder="Nome do especialista"
-                  value={formData.name}
-                  onChange={(e) => handleInputChange('name', e.target.value)}
-                  className="bg-[#0A0A0A] border-[#2A2A2A]"
-                />
-                {errors.name && <p className="text-sm text-red-500">{errors.name}</p>}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="email@exemplo.com"
-                  value={formData.email}
-                  onChange={(e) => handleInputChange('email', e.target.value)}
-                  className="bg-[#0A0A0A] border-[#2A2A2A]"
-                />
-                {errors.email && <p className="text-sm text-red-500">{errors.email}</p>}
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="whatsapp_number">WhatsApp</Label>
-                  <Input
-                    id="whatsapp_number"
-                    placeholder="+5511999999999"
-                    value={formData.whatsapp_number}
-                    onChange={(e) => handleInputChange('whatsapp_number', e.target.value)}
-                    className="bg-[#0A0A0A] border-[#2A2A2A]"
-                  />
-                  {errors.whatsapp_number && (
-                    <p className="text-sm text-red-500">{errors.whatsapp_number}</p>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="google_calendar_id">ID Calendário Google</Label>
-                  <Input
-                    id="google_calendar_id"
-                    placeholder="id@group.calendar.google.com"
-                    value={formData.google_calendar_id}
-                    onChange={(e) => handleInputChange('google_calendar_id', e.target.value)}
-                    className="bg-[#0A0A0A] border-[#2A2A2A]"
-                  />
-                  {errors.google_calendar_id && (
-                    <p className="text-sm text-red-500">{errors.google_calendar_id}</p>
-                  )}
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="working_hours">Horário de Trabalho (JSON)</Label>
-                <Textarea
-                  id="working_hours"
-                  rows={4}
-                  value={formData.working_hours}
-                  onChange={(e) => handleInputChange('working_hours', e.target.value)}
-                  className="bg-[#0A0A0A] border-[#2A2A2A] font-mono text-sm"
-                />
-                {errors.working_hours && (
-                  <p className="text-sm text-red-500">{errors.working_hours}</p>
-                )}
-              </div>
-
-              <Button
-                type="submit"
-                className="w-full bg-[#FF6B00] hover:bg-[#E66000] text-white"
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? 'Salvando...' : 'Salvar Consultor'}
-              </Button>
-            </form>
+            <ConsultantForm consultant={editing} onSuccess={closeDialog} />
           </DialogContent>
         </Dialog>
       </div>
 
       {!loading && consultants.length === 0 ? (
-        <Card className="border-[#2A2A2A] bg-[#141414] flex flex-col items-center justify-center py-16 text-center rounded-[12px]">
-          <div className="w-16 h-16 rounded-full bg-[#2A2A2A] flex items-center justify-center mb-4">
+        <Card className="border-border bg-card flex flex-col items-center justify-center py-16 text-center rounded-xl shadow-none">
+          <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center mb-4">
             <UserCog className="w-8 h-8 text-muted-foreground" />
           </div>
           <h3 className="font-display font-medium text-xl mb-2">Nenhum consultor encontrado</h3>
-          <p className="text-muted-foreground font-sans max-w-sm mb-6">
-            Você ainda não cadastrou nenhum especialista. Adicione o primeiro consultor para começar
-            os agendamentos.
+          <p className="text-muted-foreground max-w-sm mb-6">
+            Adicione o primeiro especialista e conecte a agenda Google para liberar horários reais.
           </p>
-          <Button
-            className="bg-[#FF6B00] hover:bg-[#E66000] text-white font-sans"
-            onClick={() => setOpen(true)}
-          >
-            <Plus className="w-4 h-4 mr-2" /> Adicionar Primeiro Consultor
+          <Button onClick={() => setOpen(true)}>
+            <Plus className="w-4 h-4 mr-2" /> Adicionar consultor
           </Button>
         </Card>
       ) : (
-        <Card className="border-[#2A2A2A] bg-[#141414] rounded-[12px] overflow-hidden">
+        <Card className="border-border bg-card rounded-xl overflow-hidden shadow-none">
           <Table>
-            <TableHeader className="bg-[#0A0A0A]/50">
-              <TableRow className="border-[#2A2A2A] hover:bg-transparent">
-                <TableHead className="font-sans text-muted-foreground">Nome</TableHead>
-                <TableHead className="font-sans text-muted-foreground">Email</TableHead>
-                <TableHead className="font-sans text-muted-foreground">WhatsApp</TableHead>
-                <TableHead className="font-sans text-muted-foreground">ID Calendário</TableHead>
+            <TableHeader className="bg-background/60">
+              <TableRow>
+                <TableHead>Nome</TableHead>
+                <TableHead>Email</TableHead>
+                <TableHead>WhatsApp</TableHead>
+                <TableHead>Calendário</TableHead>
+                <TableHead>Status Google</TableHead>
+                <TableHead className="w-[220px] text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {consultants.map((c) => (
-                <TableRow
-                  key={c.id}
-                  className="border-[#2A2A2A] hover:bg-[#2A2A2A]/50 transition-colors"
-                >
-                  <TableCell className="font-medium font-sans text-white">{c.name}</TableCell>
-                  <TableCell className="font-sans text-muted-foreground">
-                    {c.email || '-'}
-                  </TableCell>
-                  <TableCell className="font-sans text-muted-foreground">
-                    {c.whatsapp_number || '-'}
-                  </TableCell>
-                  <TableCell className="font-sans text-muted-foreground">
-                    {c.google_calendar_id || '-'}
-                  </TableCell>
-                </TableRow>
-              ))}
+              {consultants.map((consultant) => {
+                const connected =
+                  consultant.google_sync_status === 'connected' && consultant.google_refresh_token
+                return (
+                  <TableRow key={consultant.id}>
+                    <TableCell className="font-medium">{consultant.name}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {consultant.email || '-'}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {consultant.whatsapp_number || '-'}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {consultant.google_calendar_id || 'primary'}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={connected ? 'default' : 'destructive'}>
+                        {connected ? 'Conectado' : 'Pendente'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          size="sm"
+                          variant={connected ? 'outline' : 'default'}
+                          onClick={() => handleConnectGoogle(consultant)}
+                          disabled={connectingId === consultant.id}
+                        >
+                          {connected ? (
+                            <CalendarCheck className="w-4 h-4 mr-2" />
+                          ) : (
+                            <Link2 className="w-4 h-4 mr-2" />
+                          )}
+                          {connected ? 'Reconectar' : 'Conectar'}
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => {
+                            setEditing(consultant)
+                            setOpen(true)
+                          }}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="text-destructive"
+                          onClick={() => handleDelete(consultant)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
             </TableBody>
           </Table>
         </Card>

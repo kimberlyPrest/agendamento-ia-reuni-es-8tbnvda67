@@ -1,17 +1,26 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useClientStore } from '@/stores/use-client-store'
+import { cancelMeeting } from '@/services/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Calendar, Clock, Video, AlertCircle, ArrowRight, ExternalLink } from 'lucide-react'
+import {
+  Calendar,
+  Clock,
+  Video,
+  AlertCircle,
+  ArrowRight,
+  ExternalLink,
+  RefreshCw,
+} from 'lucide-react'
 import { format, differenceInHours } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
 export default function ClientStatus() {
-  const { client, upcomingMeeting, refreshClient } = useClientStore()
+  const { client, upcomingMeeting, stats, refreshClient } = useClientStore()
   const navigate = useNavigate()
   const [cancelling, setCancelling] = useState(false)
-  const [cancelError, setCancelError] = useState('')
+  const [feedback, setFeedback] = useState('')
 
   useEffect(() => {
     if (!client) navigate('/')
@@ -19,114 +28,123 @@ export default function ClientStatus() {
 
   if (!client) return null
 
-  const program = client.expand?.program_id
-  const consultant = client.expand?.consultant_id
+  const program = client.expand?.program_id || upcomingMeeting?.expand?.program_id
+  const consultant = client.expand?.consultant_id || upcomingMeeting?.expand?.consultant_id
+  const firstName = client.name?.split(' ')[0] || client.name
+  const minRescheduleHours = Number(program?.min_reschedule_hours || 24)
 
-  const handleSimulateTally = async () => {
-    await fetch(`${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/client/simulate-tally`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ client_id: client.id }),
-    })
-    await refreshClient()
+  const handleRefresh = async () => {
+    setFeedback('')
+    try {
+      await refreshClient()
+      setFeedback('Status atualizado.')
+    } catch (_) {
+      setFeedback('Ainda não encontramos sua resposta. Aguarde alguns segundos e tente de novo.')
+    }
   }
 
   const handleCancel = async () => {
     if (!upcomingMeeting) return
-    const hoursDiff = differenceInHours(new Date(upcomingMeeting.start_time), new Date())
-    if (hoursDiff < 24) {
-      setCancelError('Remarcações só são permitidas com no mínimo 24h de antecedência.')
-      return
-    }
-
+    const confirmed = window.confirm(
+      'Deseja cancelar este agendamento? O evento será removido do Google Calendar.',
+    )
+    if (!confirmed) return
     setCancelling(true)
+    setFeedback('')
     try {
-      await fetch(`${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/calendar/cancel`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ meeting_id: upcomingMeeting.id }),
-      })
+      await cancelMeeting(upcomingMeeting.id, client.id)
       await refreshClient()
+      setFeedback('Agendamento cancelado com sucesso.')
+    } catch (err: any) {
+      setFeedback(err.message || 'Não foi possível cancelar este agendamento.')
     } finally {
       setCancelling(false)
     }
   }
 
-  if (!client.form_answered) {
+  if (!client.form_answered && program?.require_tally !== false) {
     return (
-      <div className="animate-fade-in-up space-y-6">
-        <h2 className="font-display font-bold text-2xl text-center">Atenção Necessária</h2>
-        <Card className="bg-card border-primary/20">
+      <section className="animate-fade-in-up space-y-6">
+        <div className="text-center space-y-2">
+          <p className="text-primary font-medium">{program?.name}</p>
+          <h2 className="font-display font-bold text-2xl">Antes de agendar</h2>
+        </div>
+        <Card className="bg-card border-primary/30 shadow-none">
           <CardContent className="p-6 space-y-6 text-center">
-            <div className="mx-auto w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mb-4">
+            <div className="mx-auto w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center">
               <AlertCircle className="w-6 h-6 text-primary" />
             </div>
-            <p className="text-lg">
-              Antes de agendar sua reunião você deve responder o formulário para que o consultor(a){' '}
+            <p className="text-lg leading-relaxed">
+              Responda o formulário para que o(a) consultor(a){' '}
               <strong className="text-primary">{consultant?.name}</strong> possa se preparar para te
-              atender.
+              atender com contexto.
             </p>
-            <div className="flex flex-col gap-3 pt-4">
-              <Button asChild size="lg" className="w-full text-base">
-                <a href={program?.tally_form_url} target="_blank" rel="noreferrer">
-                  Responder Formulário <ExternalLink className="w-4 h-4 ml-2" />
+            <div className="flex flex-col gap-3 pt-2">
+              <Button
+                asChild
+                size="lg"
+                className="w-full text-base"
+                disabled={!program?.tally_form_url}
+              >
+                <a href={program?.tally_form_url || '#'} target="_blank" rel="noreferrer">
+                  Responder formulário <ExternalLink className="w-4 h-4 ml-2" />
                 </a>
               </Button>
-              <Button
-                variant="ghost"
-                onClick={handleSimulateTally}
-                className="text-muted-foreground"
-              >
-                (Dev) Simular Preenchimento
+              <Button variant="outline" onClick={handleRefresh} className="w-full">
+                <RefreshCw className="w-4 h-4 mr-2" /> Já respondi, atualizar status
               </Button>
+              {feedback && <p className="text-sm text-muted-foreground">{feedback}</p>}
             </div>
           </CardContent>
         </Card>
-      </div>
+      </section>
     )
   }
 
-  if (client.current_meeting_number > (program?.total_meetings || 1)) {
+  if (stats?.finalised) {
     return (
-      <div className="animate-fade-in-up space-y-6 text-center">
-        <h2 className="font-display font-bold text-2xl">Jornada Concluída</h2>
-        <Card className="bg-card">
-          <CardContent className="p-6 space-y-4">
-            <p className="text-lg text-muted-foreground">Sua consultoria já foi finalizada.</p>
+      <section className="animate-fade-in-up space-y-6 text-center">
+        <p className="text-primary font-medium">{program?.name}</p>
+        <h2 className="font-display font-bold text-2xl">Consultoria finalizada</h2>
+        <Card className="bg-card border-border shadow-none">
+          <CardContent className="p-6 space-y-5">
+            <p className="text-muted-foreground leading-relaxed">
+              Você já realizou todas as consultorias previstas para este programa.
+            </p>
             <Button asChild size="lg" className="w-full">
               <a
                 href={`https://wa.me/${consultant?.whatsapp_number}`}
                 target="_blank"
                 rel="noreferrer"
               >
-                Fazer Upgrade <ArrowRight className="w-4 h-4 ml-2" />
+                Falar sobre upgrade <ArrowRight className="w-4 h-4 ml-2" />
               </a>
             </Button>
           </CardContent>
         </Card>
-      </div>
+      </section>
     )
   }
 
   if (upcomingMeeting) {
     const meetDate = new Date(upcomingMeeting.start_time)
+    const canChange = differenceInHours(meetDate, new Date()) >= minRescheduleHours
+
     return (
-      <div className="animate-fade-in-up space-y-6">
+      <section className="animate-fade-in-up space-y-6">
         <div className="text-center space-y-2">
           <p className="text-primary font-medium">{program?.name}</p>
-          <h2 className="font-display font-bold text-2xl">
-            Olá, {client.name.split(' ')[0]}, como vai?
-          </h2>
+          <h2 className="font-display font-bold text-2xl">Olá, {firstName}, como vai?</h2>
           <p className="text-muted-foreground">
-            Seu agendamento já foi realizado com o(a) {consultant?.name}
+            Seu agendamento já foi realizado com o(a) {consultant?.name}.
           </p>
         </div>
 
-        <Card className="bg-secondary border-border overflow-hidden">
+        <Card className="bg-secondary border-border overflow-hidden shadow-none">
           <div className="bg-primary/10 px-6 py-4 border-b border-border/50">
             <h3 className="font-display font-semibold text-lg flex items-center">
               <Video className="w-5 h-5 mr-2 text-primary" />
-              Reunião Agendada
+              {upcomingMeeting.title || 'Reunião agendada'}
             </h3>
           </div>
           <CardContent className="p-6 space-y-6">
@@ -151,20 +169,37 @@ export default function ClientStatus() {
               </div>
             </div>
 
-            <Button asChild className="w-full" variant="secondary">
-              <a href={upcomingMeeting.meet_link} target="_blank" rel="noreferrer">
-                Acessar Google Meet
-              </a>
-            </Button>
+            <div className="grid gap-3">
+              {upcomingMeeting.meet_link && (
+                <Button asChild className="w-full" variant="secondary">
+                  <a href={upcomingMeeting.meet_link} target="_blank" rel="noreferrer">
+                    Acessar Google Meet
+                  </a>
+                </Button>
+              )}
+              {upcomingMeeting.google_html_link && (
+                <Button asChild className="w-full" variant="outline">
+                  <a href={upcomingMeeting.google_html_link} target="_blank" rel="noreferrer">
+                    Ver evento no Google Calendar
+                  </a>
+                </Button>
+              )}
+            </div>
 
-            {cancelError && <p className="text-sm text-destructive text-center">{cancelError}</p>}
+            {!canChange && (
+              <p className="text-sm text-[#FFB800] bg-[#FFB800]/10 border border-[#FFB800]/20 rounded-md p-3 text-center">
+                Remarcações ou cancelamentos só ficam disponíveis com no mínimo {minRescheduleHours}
+                h de antecedência. Fale diretamente com seu consultor se for urgente.
+              </p>
+            )}
+            {feedback && <p className="text-sm text-muted-foreground text-center">{feedback}</p>}
 
             <div className="grid grid-cols-2 gap-3 pt-4 border-t border-border">
               <Button
                 variant="outline"
                 className="w-full"
-                onClick={handleCancel}
-                disabled={cancelling}
+                onClick={() => navigate(`/schedule?reschedule=${upcomingMeeting.id}`)}
+                disabled={!canChange || cancelling}
               >
                 Remarcar
               </Button>
@@ -172,24 +207,28 @@ export default function ClientStatus() {
                 variant="destructive"
                 className="w-full bg-destructive/10 text-destructive hover:bg-destructive/20"
                 onClick={handleCancel}
-                disabled={cancelling}
+                disabled={!canChange || cancelling}
               >
                 Cancelar
               </Button>
             </div>
           </CardContent>
         </Card>
-      </div>
+      </section>
     )
   }
 
   return (
-    <div className="animate-fade-in-up space-y-8">
+    <section className="animate-fade-in-up space-y-8">
       <div className="text-center space-y-2">
         <p className="text-primary font-medium tracking-wide">{program?.name}</p>
-        <h2 className="font-display font-bold text-3xl">Bem-vindo, {client.name.split(' ')[0]}!</h2>
+        <h2 className="font-display font-bold text-3xl">Bem-vindo, {firstName}!</h2>
         <p className="text-muted-foreground text-lg">
-          Vamos agendar a sua {client.current_meeting_number}ª reunião?
+          Vamos agendar a sua {stats?.next_meeting_number || client.current_meeting_number || 1}ª
+          reunião?
+        </p>
+        <p className="text-sm text-muted-foreground">
+          Agenda do(a) consultor(a) {consultant?.name}
         </p>
       </div>
 
@@ -200,15 +239,14 @@ export default function ClientStatus() {
           coladas, sem correria.
           <br />
           <br />
-          Nota sobre remarcação: se precisar, avise com no mínimo 24h pelo WhatsApp do seu
-          consultor. Evite ao máximo, remarcações dependem da agenda dele e o novo horário entra no
-          fim da fila, o que pode levar tempo.
+          Se precisar remarcar, faça isso com no mínimo {minRescheduleHours}h de antecedência. O
+          novo horário depende da agenda do consultor e pode entrar no fim da fila.
         </CardContent>
       </Card>
 
       <Button size="lg" className="w-full text-lg h-14" onClick={() => navigate('/schedule')}>
-        Agendar Agora <ArrowRight className="w-5 h-5 ml-2" />
+        Agendar agora <ArrowRight className="w-5 h-5 ml-2" />
       </Button>
-    </div>
+    </section>
   )
 }
