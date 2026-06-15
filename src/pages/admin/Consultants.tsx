@@ -316,7 +316,9 @@ export default function AdminConsultants() {
             await finish(status)
             return
           }
-        } catch (_) {}
+        } catch (_) {
+          if (popup.closed) await finish()
+        }
         if (attempts >= 60 || popup.closed) await finish()
       }, 2000)
     } catch (err: any) {
