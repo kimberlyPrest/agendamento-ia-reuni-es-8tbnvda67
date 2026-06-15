@@ -61,8 +61,14 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
       .filter((key) => params[key] !== undefined && params[key] !== null && params[key] !== '')
       .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`)
       .join('&')
-  const googleConfigReady = () =>
-    Boolean(env('GOOGLE_CLIENT_ID') && env('GOOGLE_CLIENT_SECRET') && env('GOOGLE_REDIRECT_URI'))
+  const googleConfigReady = () => Boolean(env('GOOGLE_CLIENT_ID') && env('GOOGLE_CLIENT_SECRET'))
+  const googleRedirectUri = () => {
+    const configured = env('GOOGLE_REDIRECT_URI')
+    if (configured) return configured
+    const host = e.request.header.get('X-Forwarded-Host') || e.request.header.get('Host') || ''
+    const proto = e.request.header.get('X-Forwarded-Proto') || 'https'
+    return host ? `${proto}://${host}/backend/v1/google/oauth/callback` : ''
+  }
   const googleConnected = (consultant) =>
     Boolean(googleConfigReady() && consultant.get('google_refresh_token'))
 
@@ -286,9 +292,7 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
       e.request.url.query().get('consultant_id') || e.request.url.query().get('consultantId')
     if (!consultantId) return bad('Consultor obrigatório')
     if (!googleConfigReady())
-      return bad(
-        'Configure GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET e GOOGLE_REDIRECT_URI no ambiente.',
-      )
+      return bad('Configure GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET no ambiente.')
     try {
       const consultant = $app.findRecordById('consultants', consultantId)
       const state = `${consultant.id}:${$security.randomString(24)}`
@@ -299,7 +303,9 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
         'https://www.googleapis.com/auth/calendar.freebusy',
         'https://www.googleapis.com/auth/userinfo.email',
       ].join(' ')
-      const url = `${GOOGLE_AUTH_URL}?${formEncode({ client_id: env('GOOGLE_CLIENT_ID'), redirect_uri: env('GOOGLE_REDIRECT_URI'), response_type: 'code', scope: scopes, access_type: 'offline', prompt: 'consent', include_granted_scopes: 'true', state })}`
+      const redirectUri = googleRedirectUri()
+      if (!redirectUri) return bad('Não foi possível identificar a URL de callback OAuth.')
+      const url = `${GOOGLE_AUTH_URL}?${formEncode({ client_id: env('GOOGLE_CLIENT_ID'), redirect_uri: redirectUri, response_type: 'code', scope: scopes, access_type: 'offline', prompt: 'consent', include_granted_scopes: 'true', state })}`
       return e.json(200, { url })
     } catch (err) {
       return bad(err.message || 'Erro ao iniciar OAuth')
@@ -322,7 +328,7 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
           code,
           client_id: env('GOOGLE_CLIENT_ID'),
           client_secret: env('GOOGLE_CLIENT_SECRET'),
-          redirect_uri: env('GOOGLE_REDIRECT_URI'),
+          redirect_uri: googleRedirectUri(),
           grant_type: 'authorization_code',
         }),
         timeout: 30,
@@ -434,8 +440,7 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
       .filter((key) => params[key] !== undefined && params[key] !== null && params[key] !== '')
       .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`)
       .join('&')
-  const googleConfigReady = () =>
-    Boolean(env('GOOGLE_CLIENT_ID') && env('GOOGLE_CLIENT_SECRET') && env('GOOGLE_REDIRECT_URI'))
+  const googleConfigReady = () => Boolean(env('GOOGLE_CLIENT_ID') && env('GOOGLE_CLIENT_SECRET'))
   const googleConnected = (consultant) =>
     Boolean(googleConfigReady() && consultant.get('google_refresh_token'))
   const findClientByEmail = (email) => {
