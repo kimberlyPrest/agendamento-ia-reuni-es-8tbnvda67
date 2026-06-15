@@ -83,6 +83,8 @@ export const getGoogleCalendarStatus = async (consultantId: string) => {
     status: string
     connected_email?: string
     calendar_id?: string
+    uses_calendar_list?: boolean
+    busy_calendar_ids?: string[]
     busy_count_today?: number
     message?: string
   }

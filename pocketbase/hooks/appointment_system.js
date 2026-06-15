@@ -79,6 +79,59 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
   }
   const googleConnected = (consultant) =>
     Boolean(googleConfigReady() && hasUsableGoogleToken(consultant))
+  const uniqueValues = (items) => {
+    const seen = {}
+    return items.filter((item) => {
+      const value = String(item || '').trim()
+      if (!value || seen[value]) return false
+      seen[value] = true
+      return true
+    })
+  }
+  const configuredGoogleCalendarIds = (consultant) => {
+    const raw = consultant.get('google_calendar_id') || 'primary'
+    const ids = String(raw)
+      .split(/[\n,;]+/)
+      .map((item) => item.trim())
+      .filter((item) => item)
+    return ids.length ? ids : ['primary']
+  }
+  const writableGoogleCalendarId = (consultant) =>
+    configuredGoogleCalendarIds(consultant)[0] || 'primary'
+  const hasCalendarListScope = (consultant) => {
+    const scopes = ` ${String(consultant.get('google_scopes') || '')} `
+    return (
+      scopes.includes('https://www.googleapis.com/auth/calendar ') ||
+      scopes.includes('https://www.googleapis.com/auth/calendar.readonly') ||
+      scopes.includes('https://www.googleapis.com/auth/calendar.calendarlist')
+    )
+  }
+  const googleBusyCalendarIds = (consultant, accessToken) => {
+    const configured = configuredGoogleCalendarIds(consultant)
+    if (!hasCalendarListScope(consultant)) return configured
+    try {
+      const res = $http.send({
+        url: `${GOOGLE_CALENDAR_BASE}/users/me/calendarList?minAccessRole=freeBusyReader&showDeleted=false&showHidden=false&maxResults=250`,
+        method: 'GET',
+        headers: { authorization: `Bearer ${accessToken}` },
+        timeout: 30,
+      })
+      if (res.statusCode < 200 || res.statusCode >= 300) return configured
+      const selected = ((res.json || {}).items || [])
+        .filter((item) =>
+          Boolean(
+            item &&
+            item.id &&
+            !item.deleted &&
+            (item.primary || item.selected || configured.indexOf(item.id) !== -1),
+          ),
+        )
+        .map((item) => item.id)
+      return uniqueValues(configured.concat(selected)).slice(0, 50)
+    } catch (_) {
+      return configured
+    }
+  }
   const signOAuthState = (base) =>
     String($security.hs256(base, env('GOOGLE_CLIENT_SECRET'))).replace('sha256=', '')
   const buildOAuthState = (consultantId) => {
@@ -215,7 +268,8 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
   const googleFreeBusy = (consultant, timeMin, timeMax, forceRefresh) => {
     const accessToken = refreshGoogleAccessToken(consultant, forceRefresh)
     if (!accessToken) throw new Error('Google Calendar não conectado.')
-    const calendarId = consultant.get('google_calendar_id') || 'primary'
+    const calendarIds = googleBusyCalendarIds(consultant, accessToken)
+    const configuredIds = configuredGoogleCalendarIds(consultant)
     const res = $http.send({
       url: `${GOOGLE_CALENDAR_BASE}/freeBusy`,
       method: 'POST',
@@ -224,7 +278,8 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
         timeMin: timeMin.toISOString(),
         timeMax: timeMax.toISOString(),
         timeZone: textValue(consultant, 'working_timezone', BR_TIMEZONE),
-        items: [{ id: calendarId }],
+        calendarExpansionMax: 50,
+        items: calendarIds.map((id) => ({ id })),
       }),
       timeout: 30,
     })
@@ -237,53 +292,101 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
           : 'Não foi possível consultar a agenda Google.',
       )
     }
-    const calendar = (res.json.calendars || {})[calendarId]
-    if (!calendar || calendar.errors) {
-      const reasons = ((calendar && calendar.errors) || [])
-        .map((item) => item.reason || item.message || item.domain || '')
-        .filter((item) => item)
-        .join(', ')
-      throw new Error(
-        reasons
-          ? `Calendário Google inválido ou sem permissão: ${reasons}`
-          : 'Calendário Google inválido ou sem permissão.',
-      )
-    }
-    return (calendar.busy || []).map((busy) => ({
-      start: parseDate(busy.start),
-      end: parseDate(busy.end),
-    }))
+    const calendars = (res.json || {}).calendars || {}
+    const hardErrors = []
+    const busyIntervals = []
+    calendarIds.forEach((calendarId) => {
+      const calendar = calendars[calendarId]
+      const errors = (calendar && calendar.errors) || []
+      if (!calendar || errors.length > 0) {
+        if (configuredIds.indexOf(calendarId) !== -1) {
+          const reasons = errors
+            .map((item) => item.reason || item.message || item.domain || '')
+            .filter((item) => item)
+            .join(', ')
+          hardErrors.push(`${calendarId}: ${reasons || 'sem permissão'}`)
+        }
+        return
+      }
+      ;(calendar.busy || []).forEach((busy) => {
+        const start = parseDate(busy.start)
+        const end = parseDate(busy.end)
+        if (start && end) busyIntervals.push({ start, end, calendar_id: calendarId })
+      })
+    })
+    if (hardErrors.length > 0)
+      throw new Error(`Calendário Google inválido ou sem permissão: ${hardErrors.join('; ')}`)
+    return busyIntervals
   }
-  const buildSlots = (consultant, program, dateStr, ignoreMeetingId) => {
+  const serializeInterval = (interval) => ({
+    start: interval.start.toISOString(),
+    end: interval.end.toISOString(),
+    calendar_id: interval.calendar_id || '',
+  })
+  const buildSlots = (consultant, program, dateStr, ignoreMeetingId, withDiagnostics) => {
     const duration = numberValue(program, 'meeting_duration', 60)
     const bufferBefore = numberValue(program, 'buffer_before_minutes', 0)
     const bufferAfter = numberValue(program, 'buffer_after_minutes', 0)
-    const times = normalizeDaySchedule(getRawDaySchedule(consultant, dateStr), duration)
+    const rawSchedule = getRawDaySchedule(consultant, dateStr)
+    const times = normalizeDaySchedule(rawSchedule, duration)
     const now = new Date()
     const bounds = localDayBounds(dateStr)
-    const busyIntervals = getLocalBusyIntervals(consultant.id, dateStr, ignoreMeetingId).concat(
-      googleConnected(consultant) ? googleFreeBusy(consultant, bounds.start, bounds.end) : [],
-    )
-    return times
-      .map((time) => {
-        const start = localDateTime(dateStr, time)
-        const end = addMinutes(start, duration)
-        const blocked = busyIntervals.some((busy) =>
-          intervalsOverlap(
-            addMinutes(start, -bufferBefore),
-            addMinutes(end, bufferAfter),
-            busy.start,
-            busy.end,
-          ),
-        )
-        return {
-          time,
-          start_time: start.toISOString(),
-          end_time: end.toISOString(),
-          available: start > now && !blocked,
-        }
-      })
+    const localBusy = getLocalBusyIntervals(consultant.id, dateStr, ignoreMeetingId)
+    const googleBusy = googleConnected(consultant)
+      ? googleFreeBusy(consultant, bounds.start, bounds.end)
+      : []
+    const busyIntervals = localBusy.concat(googleBusy)
+    const evaluated = times.map((time) => {
+      const start = localDateTime(dateStr, time)
+      const end = addMinutes(start, duration)
+      const blockers = busyIntervals.filter((busy) =>
+        intervalsOverlap(
+          addMinutes(start, -bufferBefore),
+          addMinutes(end, bufferAfter),
+          busy.start,
+          busy.end,
+        ),
+      )
+      return {
+        time,
+        start_time: start.toISOString(),
+        end_time: end.toISOString(),
+        available: start > now && blockers.length === 0,
+        reason: start <= now ? 'past' : blockers.length > 0 ? 'busy' : '',
+        blockers,
+      }
+    })
+    const slots = evaluated
       .filter((slot) => slot.available)
+      .map((slot) => ({
+        time: slot.time,
+        start_time: slot.start_time,
+        end_time: slot.end_time,
+        available: true,
+      }))
+    if (!withDiagnostics) return slots
+    return {
+      slots,
+      diagnostics: {
+        date: dateStr,
+        duration_minutes: duration,
+        buffer_before_minutes: bufferBefore,
+        buffer_after_minutes: bufferAfter,
+        raw_schedule: rawSchedule,
+        candidate_times: times,
+        local_busy: localBusy.map(serializeInterval),
+        google_busy: googleBusy.map(serializeInterval),
+        rejected_slots: evaluated
+          .filter((slot) => !slot.available)
+          .slice(0, 200)
+          .map((slot) => ({
+            time: slot.time,
+            reason: slot.reason,
+            blockers: slot.blockers.map(serializeInterval),
+          })),
+        available_count: slots.length,
+      },
+    }
   }
 
   if (route === 'calendar/slots') {
@@ -316,7 +419,10 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
                 : 'Agenda Google do consultor ainda não está conectada por OAuth.',
         })
       }
-      let slots = buildSlots(consultant, program, dateStr, ignoreMeetingId)
+      const debugSlots = e.request.url.query().get('debug') === '1' && requireAdmin()
+      const slotResult = buildSlots(consultant, program, dateStr, ignoreMeetingId, debugSlots)
+      let slots = debugSlots ? slotResult.slots : slotResult
+      const diagnostics = debugSlots ? slotResult.diagnostics : null
       let lateReschedule = false
       let earliestStart = null
       const lateDelayDays = nonNegativeNumberValue(program, 'late_reschedule_delay_days', 7)
@@ -332,14 +438,19 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
           }
         } catch (_) {}
       }
-      return e.json(200, {
+      const response = {
         slots,
         google_connected: true,
         timezone: textValue(consultant, 'working_timezone', BR_TIMEZONE),
         late_reschedule: lateReschedule,
         earliest_start_time: earliestStart ? earliestStart.toISOString() : '',
         late_reschedule_delay_days: lateDelayDays,
-      })
+      }
+      if (diagnostics) {
+        diagnostics.available_count_after_late_reschedule = slots.length
+        response.diagnostics = diagnostics
+      }
+      return e.json(200, response)
     } catch (err) {
       return bad(err.message || 'Erro ao buscar horários')
     }
@@ -370,7 +481,7 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
           google_connected: false,
           status,
           connected_email: consultant.get('google_connected_email') || '',
-          calendar_id: consultant.get('google_calendar_id') || 'primary',
+          calendar_id: writableGoogleCalendarId(consultant),
           message:
             status === 'missing_refresh_token'
               ? 'Google autorizou, mas não enviou refresh token. Revogue o acesso do app na sua conta Google e conecte novamente.'
@@ -386,7 +497,9 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
         google_connected: true,
         status: 'connected',
         connected_email: consultant.get('google_connected_email') || '',
-        calendar_id: consultant.get('google_calendar_id') || 'primary',
+        calendar_id: writableGoogleCalendarId(consultant),
+        uses_calendar_list: hasCalendarListScope(consultant),
+        busy_calendar_ids: uniqueValues(busy.map((item) => item.calendar_id)),
         busy_count_today: busy.length,
         checked_range: { start: bounds.start.toISOString(), end: bounds.end.toISOString() },
         message: 'Agenda Google acessível.',
@@ -428,6 +541,7 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
       const scopes = [
         'https://www.googleapis.com/auth/calendar.events',
         'https://www.googleapis.com/auth/calendar.freebusy',
+        'https://www.googleapis.com/auth/calendar.calendarlist.readonly',
         'https://www.googleapis.com/auth/userinfo.email',
       ].join(' ')
       const redirectUri = googleRedirectUri()
@@ -606,6 +720,59 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
   const hasUsableGoogleToken = (consultant) => Boolean(consultant.get('google_refresh_token'))
   const googleConnected = (consultant) =>
     Boolean(googleConfigReady() && hasUsableGoogleToken(consultant))
+  const uniqueValues = (items) => {
+    const seen = {}
+    return items.filter((item) => {
+      const value = String(item || '').trim()
+      if (!value || seen[value]) return false
+      seen[value] = true
+      return true
+    })
+  }
+  const configuredGoogleCalendarIds = (consultant) => {
+    const raw = consultant.get('google_calendar_id') || 'primary'
+    const ids = String(raw)
+      .split(/[\n,;]+/)
+      .map((item) => item.trim())
+      .filter((item) => item)
+    return ids.length ? ids : ['primary']
+  }
+  const writableGoogleCalendarId = (consultant) =>
+    configuredGoogleCalendarIds(consultant)[0] || 'primary'
+  const hasCalendarListScope = (consultant) => {
+    const scopes = ` ${String(consultant.get('google_scopes') || '')} `
+    return (
+      scopes.includes('https://www.googleapis.com/auth/calendar ') ||
+      scopes.includes('https://www.googleapis.com/auth/calendar.readonly') ||
+      scopes.includes('https://www.googleapis.com/auth/calendar.calendarlist')
+    )
+  }
+  const googleBusyCalendarIds = (consultant, accessToken) => {
+    const configured = configuredGoogleCalendarIds(consultant)
+    if (!hasCalendarListScope(consultant)) return configured
+    try {
+      const res = $http.send({
+        url: `${GOOGLE_CALENDAR_BASE}/users/me/calendarList?minAccessRole=freeBusyReader&showDeleted=false&showHidden=false&maxResults=250`,
+        method: 'GET',
+        headers: { authorization: `Bearer ${accessToken}` },
+        timeout: 30,
+      })
+      if (res.statusCode < 200 || res.statusCode >= 300) return configured
+      const selected = ((res.json || {}).items || [])
+        .filter((item) =>
+          Boolean(
+            item &&
+            item.id &&
+            !item.deleted &&
+            (item.primary || item.selected || configured.indexOf(item.id) !== -1),
+          ),
+        )
+        .map((item) => item.id)
+      return uniqueValues(configured.concat(selected)).slice(0, 50)
+    } catch (_) {
+      return configured
+    }
+  }
   const tallyApiReady = () => Boolean(env('TALLY_API_KEY'))
   const collectEmailCandidates = (value, emails) => {
     if (value === undefined || value === null) return
@@ -879,7 +1046,8 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
   const googleFreeBusy = (consultant, timeMin, timeMax) => {
     const accessToken = refreshGoogleAccessToken(consultant)
     if (!accessToken) throw new Error('Google Calendar não conectado.')
-    const calendarId = consultant.get('google_calendar_id') || 'primary'
+    const calendarIds = googleBusyCalendarIds(consultant, accessToken)
+    const configuredIds = configuredGoogleCalendarIds(consultant)
     const res = $http.send({
       url: `${GOOGLE_CALENDAR_BASE}/freeBusy`,
       method: 'POST',
@@ -888,7 +1056,8 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
         timeMin: timeMin.toISOString(),
         timeMax: timeMax.toISOString(),
         timeZone: textValue(consultant, 'working_timezone', BR_TIMEZONE),
-        items: [{ id: calendarId }],
+        calendarExpansionMax: 50,
+        items: calendarIds.map((id) => ({ id })),
       }),
       timeout: 30,
     })
@@ -901,22 +1070,31 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
           : 'Não foi possível consultar a agenda Google.',
       )
     }
-    const calendar = (res.json.calendars || {})[calendarId]
-    if (!calendar || calendar.errors) {
-      const reasons = ((calendar && calendar.errors) || [])
-        .map((item) => item.reason || item.message || item.domain || '')
-        .filter((item) => item)
-        .join(', ')
-      throw new Error(
-        reasons
-          ? `Calendário Google inválido ou sem permissão: ${reasons}`
-          : 'Calendário Google inválido ou sem permissão.',
-      )
-    }
-    return (calendar.busy || []).map((busy) => ({
-      start: parseDate(busy.start),
-      end: parseDate(busy.end),
-    }))
+    const calendars = (res.json || {}).calendars || {}
+    const hardErrors = []
+    const busyIntervals = []
+    calendarIds.forEach((calendarId) => {
+      const calendar = calendars[calendarId]
+      const errors = (calendar && calendar.errors) || []
+      if (!calendar || errors.length > 0) {
+        if (configuredIds.indexOf(calendarId) !== -1) {
+          const reasons = errors
+            .map((item) => item.reason || item.message || item.domain || '')
+            .filter((item) => item)
+            .join(', ')
+          hardErrors.push(`${calendarId}: ${reasons || 'sem permissão'}`)
+        }
+        return
+      }
+      ;(calendar.busy || []).forEach((busy) => {
+        const start = parseDate(busy.start)
+        const end = parseDate(busy.end)
+        if (start && end) busyIntervals.push({ start, end, calendar_id: calendarId })
+      })
+    })
+    if (hardErrors.length > 0)
+      throw new Error(`Calendário Google inválido ou sem permissão: ${hardErrors.join('; ')}`)
+    return busyIntervals
   }
   const assertBusinessRules = (client, consultant, program, start, end, ignoreMeetingId) => {
     if (boolValue(program, 'require_tally', true) && !client.get('form_answered'))
@@ -1003,7 +1181,7 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
   const createGoogleEvent = (consultant, client, program, title, start, end) => {
     const accessToken = refreshGoogleAccessToken(consultant)
     if (!accessToken) throw new Error('Google Calendar não conectado.')
-    const calendarId = consultant.get('google_calendar_id') || 'primary'
+    const calendarId = writableGoogleCalendarId(consultant)
     const res = $http.send({
       url: `${GOOGLE_CALENDAR_BASE}/calendars/${encodeURIComponent(calendarId)}/events?conferenceDataVersion=1&sendUpdates=all`,
       method: 'POST',
@@ -1040,7 +1218,7 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
     if (!eventId) return null
     const accessToken = refreshGoogleAccessToken(consultant)
     if (!accessToken) throw new Error('Google Calendar não conectado.')
-    const calendarId = consultant.get('google_calendar_id') || 'primary'
+    const calendarId = writableGoogleCalendarId(consultant)
     const res = $http.send({
       url: `${GOOGLE_CALENDAR_BASE}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}?conferenceDataVersion=1&sendUpdates=all`,
       method: 'PATCH',
@@ -1067,7 +1245,7 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
     if (!eventId) return
     const accessToken = refreshGoogleAccessToken(consultant)
     if (!accessToken) return
-    const calendarId = consultant.get('google_calendar_id') || 'primary'
+    const calendarId = writableGoogleCalendarId(consultant)
     $http.send({
       url: `${GOOGLE_CALENDAR_BASE}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}?sendUpdates=all`,
       method: 'DELETE',

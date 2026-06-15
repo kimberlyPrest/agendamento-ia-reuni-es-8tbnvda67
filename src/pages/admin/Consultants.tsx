@@ -175,12 +175,15 @@ function ConsultantForm({ consultant, onSuccess }: { consultant?: any; onSuccess
           />
         </div>
         <div className="space-y-2">
-          <Label>ID do Google Calendar</Label>
+          <Label>Calendário para criar eventos</Label>
           <Input
             value={form.google_calendar_id}
             onChange={(e) => setForm({ ...form, google_calendar_id: e.target.value })}
             placeholder="primary ou id@group.calendar.google.com"
           />
+          <p className="text-xs text-muted-foreground">
+            A disponibilidade considera os calendários selecionados na conta Google conectada.
+          </p>
         </div>
       </div>
 
@@ -376,6 +379,11 @@ export default function AdminConsultants() {
         toast.success(
           `Agenda acessível: ${status.busy_count_today || 0} conflito(s) encontrados hoje.`,
         )
+        if (status.uses_calendar_list === false) {
+          toast.info(
+            'Reconecte este consultor para considerar todos os calendários selecionados no Google Calendar.',
+          )
+        }
       } else toast.error(status.message || 'Agenda Google ainda não está acessível.')
     } catch (err: any) {
       toast.error(err.message || 'Não foi possível testar a agenda Google')
@@ -449,7 +457,7 @@ export default function AdminConsultants() {
                 <TableHead>Nome</TableHead>
                 <TableHead>Email</TableHead>
                 <TableHead>WhatsApp</TableHead>
-                <TableHead>Calendário</TableHead>
+                <TableHead>Calendário de criação</TableHead>
                 <TableHead>Status Google</TableHead>
                 <TableHead className="w-[320px] text-right">Ações</TableHead>
               </TableRow>
