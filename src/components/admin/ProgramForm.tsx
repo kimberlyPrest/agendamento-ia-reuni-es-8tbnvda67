@@ -23,6 +23,22 @@ import {
 import { createProgram, updateProgram } from '@/services/api'
 import { extractFieldErrors } from '@/lib/pocketbase/errors'
 
+const TITLE_PLACEHOLDERS = [
+  { label: 'Cliente', token: '{client_name}' },
+  { label: 'Email', token: '{client_email}' },
+  { label: 'Programa', token: '{program_name}' },
+  { label: 'Nº reunião', token: '{meeting_number}' },
+]
+
+const TALLY_PLACEHOLDERS = [
+  { label: 'Email', token: '{clients_email}' },
+  { label: 'Nome completo', token: '{clients_name}' },
+  { label: 'Primeiro nome', token: '{firstname}' },
+]
+
+const TALLY_TEMPLATE =
+  'https://tally.so/r/SEU_FORMULARIO?email={clients_email}&firstname={clients_name}'
+
 const programSchema = z.object({
   name: z.string().min(1, 'Nome é obrigatório'),
   total_meetings: z.coerce.number().min(1, 'Obrigatório ter pelo menos 1 reunião'),
@@ -71,6 +87,22 @@ export function ProgramForm({ program, onSuccess }: ProgramFormProps) {
       confirmation_message: program?.confirmation_message || '',
     },
   })
+
+  const insertPlaceholder = (field: 'title_template' | 'tally_form_template', token: string) => {
+    const current = form.getValues(field) || ''
+    const shouldAddSpace = field === 'title_template' && current && !current.endsWith(' ')
+    form.setValue(field, `${current}${shouldAddSpace ? ' ' : ''}${token}`, {
+      shouldDirty: true,
+      shouldValidate: true,
+    })
+  }
+
+  const useTallyTemplate = () => {
+    form.setValue('tally_form_template', TALLY_TEMPLATE, {
+      shouldDirty: true,
+      shouldValidate: true,
+    })
+  }
 
   const onSubmit = async (data: ProgramFormValues) => {
     try {
@@ -146,8 +178,25 @@ export function ProgramForm({ program, onSuccess }: ProgramFormProps) {
             <FormItem>
               <FormLabel>Título do evento</FormLabel>
               <FormControl>
-                <Input placeholder="Consultoria {meeting_number} - {client_name}" {...field} />
+                <Input placeholder="Consultoria - clique nos campos abaixo" {...field} />
               </FormControl>
+              <div className="flex flex-wrap gap-2 pt-1">
+                {TITLE_PLACEHOLDERS.map((item) => (
+                  <Button
+                    key={item.token}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 rounded-md border-primary/30 bg-primary/10 px-2 text-xs text-primary hover:bg-primary/20"
+                    onClick={() => insertPlaceholder('title_template', item.token)}
+                  >
+                    {item.label}
+                  </Button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Exemplo: Consultoria Adapta Elite - Cliente - Nº reunião.
+              </p>
               <FormMessage />
             </FormItem>
           )}
@@ -160,8 +209,34 @@ export function ProgramForm({ program, onSuccess }: ProgramFormProps) {
             <FormItem>
               <FormLabel>URL do formulário Tally</FormLabel>
               <FormControl>
-                <Input placeholder="https://tally.so/r/...?...={clients_email}" {...field} />
+                <Input placeholder="Cole o link do Tally ou use o modelo abaixo" {...field} />
               </FormControl>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="h-7 rounded-md px-2 text-xs"
+                  onClick={useTallyTemplate}
+                >
+                  Modelo Tally
+                </Button>
+                {TALLY_PLACEHOLDERS.map((item) => (
+                  <Button
+                    key={item.token}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 rounded-md border-primary/30 bg-primary/10 px-2 text-xs text-primary hover:bg-primary/20"
+                    onClick={() => insertPlaceholder('tally_form_template', item.token)}
+                  >
+                    {item.label}
+                  </Button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Troque SEU_FORMULARIO pelo código real do Tally quando usar o modelo.
+              </p>
               <FormMessage />
             </FormItem>
           )}
