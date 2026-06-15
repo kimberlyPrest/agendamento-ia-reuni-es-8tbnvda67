@@ -6,6 +6,8 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
   const GOOGLE_USERINFO_URL = 'https://www.googleapis.com/oauth2/v2/userinfo'
   const DAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
   const DEFAULT_SLOTS = ['09:00', '10:00', '11:00', '14:00', '15:00', '16:00', '17:00']
+  const SLOT_STEP_MINUTES = 15
+  const BR_OFFSET_MINUTES = -180
   const route = e.request.pathValue('path')
 
   const env = (key) => {
@@ -54,6 +56,11 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
   const timeFromMinutes = (total) =>
     `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
   const localDateTime = (dateStr, timeStr) => new Date(`${dateStr}T${timeStr}:00-03:00`)
+  const brDateString = (date) => addMinutes(date, BR_OFFSET_MINUTES).toISOString().slice(0, 10)
+  const localDayBounds = (dateStr) => {
+    const start = localDateTime(dateStr, '00:00')
+    return { start, end: addMinutes(start, 24 * 60) }
+  }
   const intervalsOverlap = (startA, endA, startB, endB) => startA < endB && endA > startB
   const recordTime = (record, field) => parseDate(record.get(field))
   const formEncode = (params) =>
@@ -107,7 +114,11 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
   const getRawDaySchedule = (consultant, dateStr) => {
     const wh = parseWorkingHours(consultant)
     const dow = new Date(`${dateStr}T12:00:00-03:00`).getUTCDay()
-    return wh[DAY_KEYS[dow]] || wh[String(dow)] || wh[dow] || []
+    const dayKey = DAY_KEYS[dow]
+    if (Object.prototype.hasOwnProperty.call(wh, dayKey)) return wh[dayKey]
+    if (Object.prototype.hasOwnProperty.call(wh, String(dow))) return wh[String(dow)]
+    if (Object.prototype.hasOwnProperty.call(wh, dow)) return wh[dow]
+    return Object.keys(wh).length > 0 ? [] : null
   }
   const normalizeDaySchedule = (raw, duration) => {
     const windows = []
@@ -119,6 +130,7 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
     const addTime = (time) => {
       if (minutesFromTime(time) !== null) exactTimes.push(time)
     }
+    const useFallbackSlots = raw === null || raw === undefined
     const items = Array.isArray(raw) ? raw : raw ? [raw] : []
     items.forEach((item) => {
       if (!item) return
@@ -133,22 +145,24 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
       const end = item.end || item.to || item.finish
       if (start && end) addRange(start, end)
     })
-    if (windows.length === 0 && exactTimes.length === 0) DEFAULT_SLOTS.forEach(addTime)
+    if (useFallbackSlots && windows.length === 0 && exactTimes.length === 0)
+      DEFAULT_SLOTS.forEach(addTime)
     const slots = []
     exactTimes.forEach((time) => slots.push(time))
     windows.forEach((window) => {
       const start = minutesFromTime(window.start)
       const end = minutesFromTime(window.end)
       if (start === null || end === null) return
-      for (let cursor = start; cursor + duration <= end; cursor += 30)
+      for (let cursor = start; cursor + duration <= end; cursor += SLOT_STEP_MINUTES)
         slots.push(timeFromMinutes(cursor))
     })
     return Array.from(new Set(slots)).sort()
   }
   const getLocalBusyIntervals = (consultantId, dateStr, ignoreMeetingId) => {
-    const startOfDay = `${dateStr} 00:00:00.000Z`
-    const endOfDay = `${dateStr} 23:59:59.999Z`
-    const filter = `consultant_id = '${consultantId}' && start_time <= '${endOfDay}' && end_time >= '${startOfDay}' && status = 'scheduled'`
+    const bounds = localDayBounds(dateStr)
+    const startOfDay = pbDate(bounds.start)
+    const endOfDay = pbDate(bounds.end)
+    const filter = `consultant_id = '${consultantId}' && start_time < '${endOfDay}' && end_time > '${startOfDay}' && status = 'scheduled'`
     try {
       return $app
         .findRecordsByFilter('meetings', filter, '', 200, 0)
@@ -246,10 +260,9 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
     const bufferAfter = numberValue(program, 'buffer_after_minutes', 0)
     const times = normalizeDaySchedule(getRawDaySchedule(consultant, dateStr), duration)
     const now = new Date()
-    const startOfDay = localDateTime(dateStr, '00:00')
-    const endOfDay = localDateTime(dateStr, '23:59')
+    const bounds = localDayBounds(dateStr)
     const busyIntervals = getLocalBusyIntervals(consultant.id, dateStr, ignoreMeetingId).concat(
-      googleConnected(consultant) ? googleFreeBusy(consultant, startOfDay, endOfDay) : [],
+      googleConnected(consultant) ? googleFreeBusy(consultant, bounds.start, bounds.end) : [],
     )
     return times
       .map((time) => {
@@ -366,17 +379,16 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
                 : 'Agenda Google do consultor ainda não está conectada por OAuth.',
         })
       }
-      const start = new Date()
-      start.setUTCHours(0, 0, 0, 0)
-      const end = addMinutes(start, 24 * 60)
-      const busy = googleFreeBusy(consultant, start, end, true)
+      const todayStr = brDateString(new Date())
+      const bounds = localDayBounds(todayStr)
+      const busy = googleFreeBusy(consultant, bounds.start, bounds.end, true)
       return e.json(200, {
         google_connected: true,
         status: 'connected',
         connected_email: consultant.get('google_connected_email') || '',
         calendar_id: consultant.get('google_calendar_id') || 'primary',
         busy_count_today: busy.length,
-        checked_range: { start: start.toISOString(), end: end.toISOString() },
+        checked_range: { start: bounds.start.toISOString(), end: bounds.end.toISOString() },
         message: 'Agenda Google acessível.',
       })
     } catch (err) {
@@ -505,6 +517,10 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
   const GOOGLE_CALENDAR_BASE = 'https://www.googleapis.com/calendar/v3'
   const TALLY_API_BASE = 'https://api.tally.so'
   const TALLY_FORM_ID = 'wdRX0N'
+  const DAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+  const DEFAULT_SLOTS = ['09:00', '10:00', '11:00', '14:00', '15:00', '16:00', '17:00']
+  const SLOT_STEP_MINUTES = 15
+  const BR_OFFSET_MINUTES = -180
   const route = e.request.pathValue('path')
 
   const env = (key) => {
@@ -552,6 +568,25 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
     return Boolean(value)
   }
   const addMinutes = (date, minutes) => new Date(date.getTime() + minutes * 60000)
+  const minutesFromTime = (time) => {
+    const parts = String(time || '').split(':')
+    if (parts.length < 2) return null
+    const hours = Number(parts[0])
+    const minutes = Number(parts[1])
+    return Number.isFinite(hours) && Number.isFinite(minutes) ? hours * 60 + minutes : null
+  }
+  const timeFromMinutes = (total) =>
+    `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
+  const localDateTime = (dateStr, timeStr) => new Date(`${dateStr}T${timeStr}:00-03:00`)
+  const brDateString = (date) => addMinutes(date, BR_OFFSET_MINUTES).toISOString().slice(0, 10)
+  const localDayBounds = (dateStr) => {
+    const start = localDateTime(dateStr, '00:00')
+    return { start, end: addMinutes(start, 24 * 60) }
+  }
+  const minutesInBrDay = (date) => {
+    const localDate = addMinutes(date, BR_OFFSET_MINUTES)
+    return localDate.getUTCHours() * 60 + localDate.getUTCMinutes()
+  }
   const addInterval = (date, amount, unit) => {
     const next = new Date(date.getTime())
     const safeAmount = Number(amount) || 0
@@ -721,10 +756,79 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
       return null
     }
   }
+  const parseWorkingHours = (consultant) => {
+    let value = consultant.get('working_hours') || {}
+    if (typeof value === 'string') {
+      try {
+        value = JSON.parse(value)
+      } catch (_) {
+        value = {}
+      }
+    }
+    return value || {}
+  }
+  const getRawDaySchedule = (consultant, dateStr) => {
+    const wh = parseWorkingHours(consultant)
+    const dow = new Date(`${dateStr}T12:00:00-03:00`).getUTCDay()
+    const dayKey = DAY_KEYS[dow]
+    if (Object.prototype.hasOwnProperty.call(wh, dayKey)) return wh[dayKey]
+    if (Object.prototype.hasOwnProperty.call(wh, String(dow))) return wh[String(dow)]
+    if (Object.prototype.hasOwnProperty.call(wh, dow)) return wh[dow]
+    return Object.keys(wh).length > 0 ? [] : null
+  }
+  const normalizeDaySchedule = (raw, duration) => {
+    const windows = []
+    const exactTimes = []
+    const addRange = (start, end) => {
+      if (minutesFromTime(start) !== null && minutesFromTime(end) !== null)
+        windows.push({ start, end })
+    }
+    const addTime = (time) => {
+      if (minutesFromTime(time) !== null) exactTimes.push(time)
+    }
+    const useFallbackSlots = raw === null || raw === undefined
+    const items = Array.isArray(raw) ? raw : raw ? [raw] : []
+    items.forEach((item) => {
+      if (!item) return
+      if (typeof item === 'string') {
+        if (item.includes('-')) {
+          const parts = item.split('-').map((part) => part.trim())
+          addRange(parts[0], parts[1])
+        } else addTime(item.trim())
+        return
+      }
+      const start = item.start || item.from || item.begin
+      const end = item.end || item.to || item.finish
+      if (start && end) addRange(start, end)
+    })
+    if (useFallbackSlots && windows.length === 0 && exactTimes.length === 0)
+      DEFAULT_SLOTS.forEach(addTime)
+    const slots = []
+    exactTimes.forEach((time) => slots.push(time))
+    windows.forEach((window) => {
+      const start = minutesFromTime(window.start)
+      const end = minutesFromTime(window.end)
+      if (start === null || end === null) return
+      for (let cursor = start; cursor + duration <= end; cursor += SLOT_STEP_MINUTES)
+        slots.push(timeFromMinutes(cursor))
+    })
+    return Array.from(new Set(slots)).sort()
+  }
+  const isWithinWorkingSchedule = (consultant, program, start, end) => {
+    const duration = numberValue(program, 'meeting_duration', 60)
+    if (Math.abs(addMinutes(start, duration).getTime() - end.getTime()) > 60000) return false
+    const dateStr = brDateString(start)
+    const startTime = timeFromMinutes(minutesInBrDay(start))
+    return (
+      normalizeDaySchedule(getRawDaySchedule(consultant, dateStr), duration).indexOf(startTime) !==
+      -1
+    )
+  }
   const getLocalBusyIntervals = (consultantId, dateStr, ignoreMeetingId) => {
-    const startOfDay = `${dateStr} 00:00:00.000Z`
-    const endOfDay = `${dateStr} 23:59:59.999Z`
-    const filter = `consultant_id = '${consultantId}' && start_time <= '${endOfDay}' && end_time >= '${startOfDay}' && status = 'scheduled'`
+    const bounds = localDayBounds(dateStr)
+    const startOfDay = pbDate(bounds.start)
+    const endOfDay = pbDate(bounds.end)
+    const filter = `consultant_id = '${consultantId}' && start_time < '${endOfDay}' && end_time > '${startOfDay}' && status = 'scheduled'`
     try {
       return $app
         .findRecordsByFilter('meetings', filter, '', 200, 0)
@@ -847,7 +951,9 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
       return `Esta reunião precisa ter ${duration} minutos.`
     const bufferBefore = numberValue(program, 'buffer_before_minutes', 0)
     const bufferAfter = numberValue(program, 'buffer_after_minutes', 0)
-    const dateStr = start.toISOString().slice(0, 10)
+    if (!isWithinWorkingSchedule(consultant, program, start, end))
+      return 'Escolha um horário dentro da janela de atendimento do consultor.'
+    const dateStr = brDateString(start)
     const localConflict = getLocalBusyIntervals(consultant.id, dateStr, ignoreMeetingId).some(
       (busy) =>
         intervalsOverlap(
