@@ -283,19 +283,37 @@ export default function AdminConsultants() {
       let finished = false
       let timer: ReturnType<typeof window.setInterval> | undefined
 
-      const finish = async (status?: string) => {
+      const finish = async (status?: string, calendarStatus?: any) => {
         if (finished) return
         finished = true
         if (timer) window.clearInterval(timer)
         window.removeEventListener('message', onMessage)
+        const nextStatus = calendarStatus?.status || status
         await loadData()
+        if (nextStatus) {
+          setConsultants((current) =>
+            current.map((item) =>
+              item.id === consultant.id
+                ? {
+                    ...item,
+                    google_sync_status: nextStatus,
+                    google_connected_email:
+                      calendarStatus?.connected_email || item.google_connected_email,
+                    google_calendar_id: calendarStatus?.calendar_id || item.google_calendar_id,
+                  }
+                : item,
+            ),
+          )
+        }
         setConnectingId(null)
-        if (status === 'connected') toast.success('Google Calendar conectado e sincronizado.')
-        else if (status === 'missing_refresh_token') {
+        if (nextStatus === 'connected') toast.success('Google Calendar conectado e sincronizado.')
+        else if (nextStatus === 'missing_refresh_token') {
           toast.error(
             'Google autorizou, mas não enviou refresh token. Reconecte após revogar o acesso do app na conta Google.',
           )
-        } else toast.info('Atualizei o status da conexão do Google.')
+        } else if (calendarStatus?.message) toast.error(calendarStatus.message)
+        else
+          toast.info('Ainda não consegui confirmar a conexão. Use Testar para ver o diagnóstico.')
       }
 
       const onMessage = (event: MessageEvent) => {
@@ -309,17 +327,17 @@ export default function AdminConsultants() {
       let attempts = 0
       timer = window.setInterval(async () => {
         attempts += 1
+        let latestStatus: any = null
         try {
-          const fresh = await pb.collection('consultants').getOne(consultant.id)
-          const status = fresh.google_sync_status
-          if (status === 'connected' || status === 'missing_refresh_token') {
-            await finish(status)
+          latestStatus = await getGoogleCalendarStatus(consultant.id)
+          if (latestStatus.google_connected || latestStatus.status === 'missing_refresh_token') {
+            await finish(latestStatus.status, latestStatus)
             return
           }
         } catch (_) {
-          if (popup.closed) await finish()
+          latestStatus = null
         }
-        if (attempts >= 60 || popup.closed) await finish()
+        if (attempts >= 60) await finish(latestStatus?.status, latestStatus)
       }, 2000)
     } catch (err: any) {
       setConnectingId(null)
@@ -333,6 +351,18 @@ export default function AdminConsultants() {
       const status = await getGoogleCalendarStatus(consultant.id)
       await loadData()
       if (status.google_connected) {
+        setConsultants((current) =>
+          current.map((item) =>
+            item.id === consultant.id
+              ? {
+                  ...item,
+                  google_sync_status: status.status || 'connected',
+                  google_connected_email: status.connected_email || item.google_connected_email,
+                  google_calendar_id: status.calendar_id || item.google_calendar_id,
+                }
+              : item,
+          ),
+        )
         toast.success(
           `Agenda acessível: ${status.busy_count_today || 0} conflito(s) encontrados hoje.`,
         )

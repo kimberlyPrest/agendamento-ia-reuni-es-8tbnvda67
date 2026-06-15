@@ -219,11 +219,27 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
       }),
       timeout: 30,
     })
-    if (res.statusCode < 200 || res.statusCode >= 300)
-      throw new Error('Não foi possível consultar a agenda Google.')
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      const detail =
+        ((res.json || {}).error || {}).message || ((res.json || {}).error || {}).status || ''
+      throw new Error(
+        detail
+          ? `Google Calendar recusou a consulta: ${detail}`
+          : 'Não foi possível consultar a agenda Google.',
+      )
+    }
     const calendar = (res.json.calendars || {})[calendarId]
-    if (!calendar || calendar.errors)
-      throw new Error('Calendário Google inválido ou sem permissão.')
+    if (!calendar || calendar.errors) {
+      const reasons = ((calendar && calendar.errors) || [])
+        .map((item) => item.reason || item.message || item.domain || '')
+        .filter((item) => item)
+        .join(', ')
+      throw new Error(
+        reasons
+          ? `Calendário Google inválido ou sem permissão: ${reasons}`
+          : 'Calendário Google inválido ou sem permissão.',
+      )
+    }
     return (calendar.busy || []).map((busy) => ({
       start: parseDate(busy.start),
       end: parseDate(busy.end),
@@ -759,11 +775,27 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
       }),
       timeout: 30,
     })
-    if (res.statusCode < 200 || res.statusCode >= 300)
-      throw new Error('Não foi possível consultar a agenda Google.')
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      const detail =
+        ((res.json || {}).error || {}).message || ((res.json || {}).error || {}).status || ''
+      throw new Error(
+        detail
+          ? `Google Calendar recusou a consulta: ${detail}`
+          : 'Não foi possível consultar a agenda Google.',
+      )
+    }
     const calendar = (res.json.calendars || {})[calendarId]
-    if (!calendar || calendar.errors)
-      throw new Error('Calendário Google inválido ou sem permissão.')
+    if (!calendar || calendar.errors) {
+      const reasons = ((calendar && calendar.errors) || [])
+        .map((item) => item.reason || item.message || item.domain || '')
+        .filter((item) => item)
+        .join(', ')
+      throw new Error(
+        reasons
+          ? `Calendário Google inválido ou sem permissão: ${reasons}`
+          : 'Calendário Google inválido ou sem permissão.',
+      )
+    }
     return (calendar.busy || []).map((busy) => ({
       start: parseDate(busy.start),
       end: parseDate(busy.end),
