@@ -1,11 +1,11 @@
 migrate(
   (app) => {
     const addField = (collection, name, field) => {
+      let existing = null
       try {
-        collection.fields.getByName(name)
-      } catch (_) {
-        collection.fields.add(field)
-      }
+        existing = collection.fields.getByName(name)
+      } catch (_) {}
+      if (!existing) collection.fields.add(field)
     }
 
     const saveCollection = (name, configure) => {
