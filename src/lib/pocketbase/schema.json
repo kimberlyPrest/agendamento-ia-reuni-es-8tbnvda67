@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-15T13:11:21.930Z",
+  "generatedAt": "2026-06-15T13:27:36.488Z",
   "collections": [
     {
       "name": "users",
@@ -43,6 +43,280 @@
         "CREATE UNIQUE INDEX `idx_tokenKey__pb_users_auth_` ON `users` (`tokenKey`)",
         "CREATE UNIQUE INDEX `idx_email__pb_users_auth_` ON `users` (`email`) WHERE `email` != ''"
       ]
+    },
+    {
+      "name": "programs",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "name",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "total_meetings",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "meeting_duration",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "title_template",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "tally_form_url",
+          "type": "url",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "allow_concurrent",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "min_interval_days",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "name": "consultants",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "name",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "whatsapp_number",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "email",
+          "type": "email",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "google_calendar_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "working_hours",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "name": "clients",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "email",
+          "type": "email",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "program_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "programs"
+        },
+        {
+          "name": "consultant_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "consultants"
+        },
+        {
+          "name": "current_meeting_number",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "form_answered",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": ["CREATE UNIQUE INDEX `idx_clients_email` ON `clients` (email)"]
+    },
+    {
+      "name": "meetings",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "client_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "clients"
+        },
+        {
+          "name": "consultant_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "consultants"
+        },
+        {
+          "name": "program_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "programs"
+        },
+        {
+          "name": "start_time",
+          "type": "date",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "end_time",
+          "type": "date",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "google_event_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "meet_link",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["scheduled", "cancelled", "completed"]
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": ["CREATE INDEX `idx_meetings_start` ON `meetings` (start_time)"]
     }
   ]
 }
