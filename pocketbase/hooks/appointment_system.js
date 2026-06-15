@@ -71,6 +71,26 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
   }
   const googleConnected = (consultant) =>
     Boolean(googleConfigReady() && consultant.get('google_refresh_token'))
+  const signOAuthState = (base) =>
+    String($security.hs256(base, env('GOOGLE_CLIENT_SECRET'))).replace('sha256=', '')
+  const buildOAuthState = (consultantId) => {
+    const issuedAt = String(Date.now())
+    const nonce = $security.randomString(24)
+    const base = `${consultantId}:${issuedAt}:${nonce}`
+    return `${base}:${signOAuthState(base)}`
+  }
+  const validOAuthState = (consultant, state) => {
+    if (consultant.get('google_oauth_state') === state) return true
+    const parts = String(state || '').split(':')
+    if (parts.length < 4 || parts[0] !== consultant.id) return false
+    const issuedAt = Number(parts[1])
+    if (!Number.isFinite(issuedAt)) return false
+    const age = Date.now() - issuedAt
+    if (age < -5 * 60 * 1000 || age > 20 * 60 * 1000) return false
+    const base = `${parts[0]}:${parts[1]}:${parts[2]}`
+    const signature = parts.slice(3).join(':')
+    return signature === signOAuthState(base)
+  }
 
   const parseWorkingHours = (consultant) => {
     let value = consultant.get('working_hours') || {}
@@ -295,7 +315,7 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
       return bad('Configure GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET no ambiente.')
     try {
       const consultant = $app.findRecordById('consultants', consultantId)
-      const state = `${consultant.id}:${$security.randomString(24)}`
+      const state = buildOAuthState(consultant.id)
       consultant.set('google_oauth_state', state)
       $app.save(consultant)
       const scopes = [
@@ -319,7 +339,7 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
     try {
       const consultantId = state.split(':')[0]
       const consultant = $app.findRecordById('consultants', consultantId)
-      if (consultant.get('google_oauth_state') !== state) return bad('State OAuth inválido')
+      if (!validOAuthState(consultant, state)) return bad('State OAuth inválido')
       const tokenRes = $http.send({
         url: GOOGLE_TOKEN_URL,
         method: 'POST',
