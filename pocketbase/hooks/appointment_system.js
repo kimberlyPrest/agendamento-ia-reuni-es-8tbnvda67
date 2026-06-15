@@ -62,13 +62,7 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
       .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`)
       .join('&')
   const googleConfigReady = () => Boolean(env('GOOGLE_CLIENT_ID') && env('GOOGLE_CLIENT_SECRET'))
-  const hasUsableGoogleToken = (consultant) => {
-    const expiry = parseDate(consultant.get('google_token_expiry'))
-    return Boolean(
-      consultant.get('google_refresh_token') ||
-      (consultant.get('google_access_token') && expiry && expiry.getTime() > Date.now() + 120000),
-    )
-  }
+  const hasUsableGoogleToken = (consultant) => Boolean(consultant.get('google_refresh_token'))
   const googleRedirectUri = () => {
     const configured = env('GOOGLE_REDIRECT_URI')
     if (configured) return configured
@@ -168,10 +162,11 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
       return []
     }
   }
-  const refreshGoogleAccessToken = (consultant) => {
+  const refreshGoogleAccessToken = (consultant, forceRefresh) => {
     const currentToken = consultant.get('google_access_token')
     const expiry = parseDate(consultant.get('google_token_expiry'))
-    if (currentToken && expiry && expiry.getTime() > Date.now() + 120000) return currentToken
+    if (!forceRefresh && currentToken && expiry && expiry.getTime() > Date.now() + 120000)
+      return currentToken
     const refreshToken = consultant.get('google_refresh_token')
     if (!refreshToken || !googleConfigReady()) return ''
     const res = $http.send({
@@ -203,8 +198,8 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
     $app.save(consultant)
     return accessToken
   }
-  const googleFreeBusy = (consultant, timeMin, timeMax) => {
-    const accessToken = refreshGoogleAccessToken(consultant)
+  const googleFreeBusy = (consultant, timeMin, timeMax, forceRefresh) => {
+    const accessToken = refreshGoogleAccessToken(consultant, forceRefresh)
     if (!accessToken) throw new Error('Google Calendar não conectado.')
     const calendarId = consultant.get('google_calendar_id') || 'primary'
     const res = $http.send({
@@ -303,7 +298,9 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
           message:
             status === 'missing_refresh_token'
               ? 'Google autorizou, mas não enviou refresh token. Revogue o acesso do app na sua conta Google e conecte novamente.'
-              : 'Agenda Google do consultor ainda não está conectada por OAuth.',
+              : status === 'token_error'
+                ? 'O refresh token do Google foi recusado. Revogue o acesso do app na sua conta Google e conecte novamente.'
+                : 'Agenda Google do consultor ainda não está conectada por OAuth.',
         })
       }
       let slots = buildSlots(consultant, program, dateStr, ignoreMeetingId)
@@ -342,7 +339,7 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
     if (!consultantId) return bad('Consultor obrigatório')
     try {
       const consultant = $app.findRecordById('consultants', consultantId)
-      const status = textValue(consultant, 'google_sync_status', 'not_connected')
+      let status = textValue(consultant, 'google_sync_status', 'not_connected')
       if (!googleConfigReady()) {
         return e.json(200, {
           google_connected: false,
@@ -351,6 +348,11 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
         })
       }
       if (!googleConnected(consultant)) {
+        if (status === 'connected') {
+          status = 'missing_refresh_token'
+          consultant.set('google_sync_status', status)
+          $app.save(consultant)
+        }
         return e.json(200, {
           google_connected: false,
           status,
@@ -359,13 +361,15 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
           message:
             status === 'missing_refresh_token'
               ? 'Google autorizou, mas não enviou refresh token. Revogue o acesso do app na sua conta Google e conecte novamente.'
-              : 'Agenda Google do consultor ainda não está conectada por OAuth.',
+              : status === 'token_error'
+                ? 'O refresh token do Google foi recusado. Revogue o acesso do app na sua conta Google e conecte novamente.'
+                : 'Agenda Google do consultor ainda não está conectada por OAuth.',
         })
       }
       const start = new Date()
       start.setUTCHours(0, 0, 0, 0)
       const end = addMinutes(start, 24 * 60)
-      const busy = googleFreeBusy(consultant, start, end)
+      const busy = googleFreeBusy(consultant, start, end, true)
       return e.json(200, {
         google_connected: true,
         status: 'connected',
@@ -376,15 +380,23 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
         message: 'Agenda Google acessível.',
       })
     } catch (err) {
+      let status = 'calendar_error'
       try {
         const consultant = $app.findRecordById('consultants', consultantId)
-        consultant.set('google_sync_status', 'calendar_error')
-        $app.save(consultant)
+        status = textValue(consultant, 'google_sync_status', 'calendar_error')
+        if (status !== 'token_error') {
+          status = 'calendar_error'
+          consultant.set('google_sync_status', status)
+          $app.save(consultant)
+        }
       } catch (_) {}
       return e.json(200, {
         google_connected: false,
-        status: 'calendar_error',
-        message: err.message || 'Não foi possível consultar a agenda Google.',
+        status,
+        message:
+          status === 'token_error'
+            ? 'O refresh token do Google foi recusado. Revogue o acesso do app na sua conta Google e conecte novamente.'
+            : err.message || 'Não foi possível consultar a agenda Google.',
       })
     }
   }
@@ -439,14 +451,21 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
       if (tokenRes.statusCode < 200 || tokenRes.statusCode >= 300)
         return bad('Google recusou a autorização.')
       const token = tokenRes.json || {}
+      const previousRefreshToken = consultant.get('google_refresh_token') || ''
       consultant.set('google_access_token', token.access_token || '')
-      if (token.refresh_token) consultant.set('google_refresh_token', token.refresh_token)
       consultant.set(
         'google_token_expiry',
         pbDate(new Date(Date.now() + Number(token.expires_in || 3600) * 1000)),
       )
       consultant.set('google_scopes', token.scope || '')
-      const hasRefreshToken = Boolean(token.refresh_token || consultant.get('google_refresh_token'))
+      let hasRefreshToken = Boolean(token.refresh_token)
+      if (token.refresh_token) {
+        consultant.set('google_refresh_token', token.refresh_token)
+      } else if (previousRefreshToken) {
+        consultant.set('google_refresh_token', previousRefreshToken)
+        hasRefreshToken = Boolean(refreshGoogleAccessToken(consultant, true))
+      }
+      if (!hasRefreshToken) consultant.set('google_refresh_token', '')
       consultant.set('google_sync_status', hasRefreshToken ? 'connected' : 'missing_refresh_token')
       consultant.set('google_oauth_state', '')
       consultant.set('calendar_connected_at', pbDate(new Date()))
@@ -549,13 +568,7 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
       .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`)
       .join('&')
   const googleConfigReady = () => Boolean(env('GOOGLE_CLIENT_ID') && env('GOOGLE_CLIENT_SECRET'))
-  const hasUsableGoogleToken = (consultant) => {
-    const expiry = parseDate(consultant.get('google_token_expiry'))
-    return Boolean(
-      consultant.get('google_refresh_token') ||
-      (consultant.get('google_access_token') && expiry && expiry.getTime() > Date.now() + 120000),
-    )
-  }
+  const hasUsableGoogleToken = (consultant) => Boolean(consultant.get('google_refresh_token'))
   const googleConnected = (consultant) =>
     Boolean(googleConfigReady() && hasUsableGoogleToken(consultant))
   const tallyApiReady = () => Boolean(env('TALLY_API_KEY'))

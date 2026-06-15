@@ -319,7 +319,14 @@ export default function AdminConsultants() {
       const onMessage = (event: MessageEvent) => {
         const data = event.data || {}
         if (data.type === 'google-calendar-oauth' && data.consultantId === consultant.id) {
-          setTimeout(() => finish(data.status), 500)
+          setTimeout(async () => {
+            try {
+              const latestStatus = await getGoogleCalendarStatus(consultant.id)
+              await finish(latestStatus.status, latestStatus)
+            } catch (_) {
+              await finish(data.status)
+            }
+          }, 800)
         }
       }
 
@@ -330,7 +337,10 @@ export default function AdminConsultants() {
         let latestStatus: any = null
         try {
           latestStatus = await getGoogleCalendarStatus(consultant.id)
-          if (latestStatus.google_connected || latestStatus.status === 'missing_refresh_token') {
+          if (
+            latestStatus.google_connected ||
+            ['missing_refresh_token', 'token_error', 'calendar_error'].includes(latestStatus.status)
+          ) {
             await finish(latestStatus.status, latestStatus)
             return
           }
@@ -450,7 +460,7 @@ export default function AdminConsultants() {
                 const connected = googleStatus === 'connected'
                 const statusLabel = connected
                   ? 'Conectado'
-                  : googleStatus === 'missing_refresh_token'
+                  : googleStatus === 'missing_refresh_token' || googleStatus === 'token_error'
                     ? 'Reconectar'
                     : googleStatus === 'calendar_error'
                       ? 'Erro'
