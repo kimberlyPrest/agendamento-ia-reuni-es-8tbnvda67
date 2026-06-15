@@ -26,6 +26,16 @@ export default function ClientStatus() {
     if (!client) navigate('/')
   }, [client, navigate])
 
+  useEffect(() => {
+    if (!client || client.form_answered) return
+    const program = client.expand?.program_id
+    if (program?.require_tally === false) return
+    const interval = window.setInterval(() => {
+      refreshClient().catch(() => undefined)
+    }, 5000)
+    return () => window.clearInterval(interval)
+  }, [client, refreshClient])
+
   if (!client) return null
 
   const program = client.expand?.program_id || upcomingMeeting?.expand?.program_id
@@ -108,8 +118,11 @@ export default function ClientStatus() {
                 </a>
               </Button>
               <Button variant="outline" onClick={handleRefresh} className="w-full">
-                <RefreshCw className="w-4 h-4 mr-2" /> Já respondi, atualizar status
+                <RefreshCw className="w-4 h-4 mr-2" /> Já respondi, verificar agora
               </Button>
+              <p className="text-xs text-muted-foreground">
+                A verificação também acontece automaticamente assim que o Tally enviar a resposta.
+              </p>
               {feedback && <p className="text-sm text-muted-foreground">{feedback}</p>}
             </div>
           </CardContent>

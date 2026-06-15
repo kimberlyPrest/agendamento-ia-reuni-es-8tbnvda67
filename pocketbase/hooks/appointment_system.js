@@ -916,50 +916,103 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
   }
 
   if (route === 'tally/webhook') {
+    const TALLY_FORM_ID = 'wdRX0N'
     const body = e.requestInfo().body || {}
+    const data = (body || {}).data || {}
+    const formId = String(
+      data.formId ||
+        data.form_id ||
+        (data.form || {}).id ||
+        '' ||
+        body.formId ||
+        body.form_id ||
+        '',
+    )
+    if (formId && formId !== TALLY_FORM_ID) {
+      return e.json(200, {
+        success: true,
+        matched: false,
+        reason: 'ignored_form',
+        form_id: formId,
+      })
+    }
+
     const secret = env('TALLY_SIGNING_SECRET')
     if (secret) {
-      const received = String(
-        e.request.header.get('Tally-Signature') || e.request.header.get('tally-signature') || '',
-      ).replace('sha256=', '')
+      const rawSignature = String(
+        e.request.header.get('Tally-Signature') ||
+          e.request.header.get('tally-signature') ||
+          e.request.header.get('X-Tally-Signature') ||
+          e.request.header.get('x-tally-signature') ||
+          '',
+      )
+      const received = rawSignature
+        .split(',')
+        .map((part) => part.trim().replace('sha256=', '').replace('v1=', ''))
+        .filter((part) => part)
       const calculated = String($security.hs256(JSON.stringify(body), secret)).replace(
         'sha256=',
         '',
       )
-      if (!received || received !== calculated)
+      if (received.length > 0 && received.indexOf(calculated) === -1)
         return e.json(401, { error: 'Assinatura Tally inválida' })
     }
-    const fields = ((body || {}).data || {}).fields || []
-    const emailField = fields.find(
-      (field) =>
-        field.type === 'INPUT_EMAIL' ||
-        String(field.label || '')
-          .toLowerCase()
-          .includes('email'),
-    )
-    const email = normalizeEmail(
-      (emailField && emailField.value) || ((body || {}).data || {}).respondentEmail || '',
-    )
+
+    const fields = Array.isArray(data.fields) ? data.fields : []
+    let email = normalizeEmail(data.respondentEmail || data.email || body.respondentEmail || '')
+    if (!email && data.hiddenFields) {
+      if (Array.isArray(data.hiddenFields)) {
+        const hiddenEmail = data.hiddenFields.find((field) =>
+          String(field.key || field.name || field.label || '')
+            .toLowerCase()
+            .includes('email'),
+        )
+        email = normalizeEmail(hiddenEmail && hiddenEmail.value)
+      } else {
+        email = normalizeEmail(
+          data.hiddenFields.email ||
+            data.hiddenFields.client_email ||
+            data.hiddenFields.clients_email,
+        )
+      }
+    }
+    if (!email) {
+      const emailField = fields.find((field) => {
+        const marker = String(
+          `${field.type || ''} ${field.label || ''} ${field.key || ''} ${field.name || ''}`,
+        ).toLowerCase()
+        const value = String(field.value || '')
+        return (
+          marker.includes('email') ||
+          field.type === 'INPUT_EMAIL' ||
+          /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+        )
+      })
+      email = normalizeEmail(emailField && emailField.value)
+    }
+
     if (!email) return e.json(200, { success: true, matched: false, reason: 'email_missing' })
     try {
       const client = findClientByEmail(email)
       client.set('form_answered', true)
       client.set(
         'tally_submission_id',
-        ((body || {}).data || {}).submissionId ||
-          ((body || {}).data || {}).responseId ||
-          body.eventId ||
-          '',
+        data.submissionId || data.responseId || data.id || body.eventId || '',
       )
       client.set(
         'tally_answered_at',
-        pbDate(new Date(((body || {}).data || {}).createdAt || body.createdAt || Date.now())),
+        pbDate(new Date(data.createdAt || body.createdAt || Date.now())),
       )
-      client.set('tally_payload', body.data || body)
+      client.set('tally_payload', data || body)
       $app.save(client)
-      return e.json(200, { success: true, matched: true, client_id: client.id })
+      return e.json(200, {
+        success: true,
+        matched: true,
+        client_id: client.id,
+        form_id: formId || TALLY_FORM_ID,
+      })
     } catch (_) {
-      return e.json(200, { success: true, matched: false, reason: 'client_not_found' })
+      return e.json(200, { success: true, matched: false, reason: 'client_not_found', email })
     }
   }
 

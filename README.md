@@ -17,7 +17,8 @@ Este projeto foi criado de ponta a ponta com o [Skip](https://goskip.dev).
 ## Integrações e regras de agendamento
 
 - Google Calendar usa OAuth do Google Console. Configure `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` nos secrets/envs do Skip, depois conecte cada consultor no admin. `GOOGLE_REDIRECT_URI` é opcional: se não existir, o backend monta automaticamente `/backend/v1/google/oauth/callback` a partir do host da requisição. Mesmo assim, essa callback precisa estar cadastrada em `Authorized redirect URIs` no Google Console.
-- Tally deve ser salvo no programa como template de URL em `tally_form_template`. Placeholders aceitos no link: `{clients_email}`, `{client_email}`, `{email}`, `{clients_name}`, `{client_name}`, `{firstname}` e `{first_name}`.
+- Tally deve ser salvo no programa como template de URL em `tally_form_template`. O formulário padrão é `https://tally.so/r/wdRX0N`. Placeholders aceitos no link: `{clients_email}`, `{client_email}`, `{email}`, `{clients_name}`, `{client_name}`, `{firstname}` e `{first_name}`.
+- Para marcar automaticamente `form_answered`, configure no Tally do formulário `wdRX0N` um webhook `POST` para `https://agendamento-ia-reunioes-6b454.shrd00.internal.goskip.dev/backend/v1/tally/webhook`. O secret do webhook deve ser o mesmo valor salvo em `TALLY_SIGNING_SECRET`.
 - A antecedência mínima de cancelamento/remarcação fica em `min_reschedule_hours`.
 - Se o cliente tentar remarcar dentro desse prazo, a remarcação continua possível, mas o novo horário só aparece a partir de `late_reschedule_delay_days` dias depois. Cancelamento dentro do prazo segue bloqueado.
 

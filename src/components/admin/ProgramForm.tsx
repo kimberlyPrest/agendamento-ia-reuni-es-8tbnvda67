@@ -37,8 +37,7 @@ const TALLY_PLACEHOLDERS = [
   { label: 'Primeiro nome', token: '{firstname}' },
 ]
 
-const TALLY_TEMPLATE =
-  'https://tally.so/r/SEU_FORMULARIO?email={clients_email}&firstname={clients_name}'
+const TALLY_TEMPLATE = 'https://tally.so/r/wdRX0N?email={clients_email}&firstname={clients_name}'
 
 const programSchema = z.object({
   name: z.string().min(1, 'Nome é obrigatório'),
@@ -237,7 +236,7 @@ export function ProgramForm({ program, onSuccess }: ProgramFormProps) {
                 ))}
               </div>
               <p className="text-xs text-muted-foreground">
-                Troque SEU_FORMULARIO pelo código real do Tally quando usar o modelo.
+                Modelo configurado para o formulário wdRX0N.
               </p>
               <FormMessage />
             </FormItem>
