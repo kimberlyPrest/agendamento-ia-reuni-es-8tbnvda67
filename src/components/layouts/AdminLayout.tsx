@@ -1,7 +1,7 @@
 import { Outlet, Navigate, Link } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
-import { LayoutDashboard, Users, CalendarDays, LogOut } from 'lucide-react'
+import { LayoutDashboard, Users, CalendarDays, LogOut, UserCog } from 'lucide-react'
 import {
   SidebarProvider,
   Sidebar,
@@ -47,6 +47,13 @@ export function AdminLayout() {
                 <SidebarMenuButton asChild>
                   <Link to="/admin/programas">
                     <CalendarDays className="w-4 h-4 mr-2" /> Programas
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild>
+                  <Link to="/admin/consultores">
+                    <UserCog className="w-4 h-4 mr-2" /> Consultores
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>

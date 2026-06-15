@@ -17,6 +17,7 @@ import AdminLogin from '@/pages/admin/Login'
 import AdminDashboard from '@/pages/admin/Dashboard'
 import ClientesList from '@/pages/admin/ClientesList'
 import ProgramasList from '@/pages/admin/ProgramasList'
+import Consultants from '@/pages/admin/Consultants'
 import NotFound from '@/pages/NotFound'
 
 const App = () => (
@@ -42,6 +43,7 @@ const App = () => (
               <Route path="/admin/dashboard" element={<AdminDashboard />} />
               <Route path="/admin/clientes" element={<ClientesList />} />
               <Route path="/admin/programas" element={<ProgramasList />} />
+              <Route path="/admin/consultores" element={<Consultants />} />
             </Route>
 
             <Route path="*" element={<NotFound />} />
