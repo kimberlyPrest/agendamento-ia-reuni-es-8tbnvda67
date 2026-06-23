@@ -1,6 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { changePassword, getConsultantMe, syncTldv, updateConsultantProfile } from '@/services/hub'
-import { getGoogleCalendarStatus, startGoogleOAuth } from '@/services/api'
+import {
+  getGoogleCalendars,
+  getGoogleCalendarStatus,
+  startGoogleOAuth,
+  type GoogleCalendarSource,
+} from '@/services/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -29,6 +34,22 @@ const defaultWorkingHours: any = {
   sunday: [],
 }
 
+function splitCalendarIds(value: string) {
+  const ids = String(value || 'primary')
+    .split(/[\n,;]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+  return ids.length ? ids : ['primary']
+}
+
+function joinCalendarIds(ids: string[]) {
+  return Array.from(new Set(ids.filter(Boolean))).join(',') || 'primary'
+}
+
+function normalizeCalendarId(id: string, calendar: GoogleCalendarSource) {
+  return id === 'primary' && calendar.primary ? calendar.id : id
+}
+
 function normalizeWorkingHours(value: any) {
   if (!value) return defaultWorkingHours
   if (typeof value === 'string') {
@@ -50,6 +71,8 @@ export default function ConsultantSettings() {
   const [connecting, setConnecting] = useState(false)
   const [testing, setTesting] = useState(false)
   const [syncingTldv, setSyncingTldv] = useState(false)
+  const [calendars, setCalendars] = useState<GoogleCalendarSource[]>([])
+  const [loadingCalendars, setLoadingCalendars] = useState(false)
   const [passwordForm, setPasswordForm] = useState({ password: '', confirm: '' })
   const [changingPassword, setChangingPassword] = useState(false)
 
@@ -62,9 +85,36 @@ export default function ConsultantSettings() {
       whatsapp_number: data.consultant.whatsapp_number || '',
       photo_url: data.consultant.photo_url || '',
       tldv_api_key: data.consultant.tldv_api_key || '',
+      google_calendar_id: data.consultant.google_calendar_id || 'primary',
       working_timezone: data.consultant.working_timezone || 'America/Sao_Paulo',
     })
     setWorkingHours(normalizeWorkingHours(data.consultant.working_hours))
+    if (data.consultant.google_sync_status === 'connected') {
+      try {
+        const googleStatus = await getGoogleCalendarStatus(data.consultant.id)
+        setStatus(googleStatus)
+        setCalendars(googleStatus.calendars || [])
+      } catch (_) {}
+    }
+  }
+
+  const loadGoogleCalendars = async (consultantId = consultant?.id) => {
+    if (!consultantId) return
+    setLoadingCalendars(true)
+    try {
+      const data = await getGoogleCalendars(consultantId)
+      setCalendars(data.calendars || [])
+      if (data.configured_calendar_ids?.length) {
+        setForm((current: any) => ({
+          ...current,
+          google_calendar_id: data.configured_calendar_ids!.join(','),
+        }))
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Não foi possível listar agendas Google.')
+    } finally {
+      setLoadingCalendars(false)
+    }
   }
 
   useEffect(() => {
@@ -98,6 +148,7 @@ export default function ConsultantSettings() {
     try {
       const next = await getGoogleCalendarStatus(consultant.id)
       setStatus(next)
+      setCalendars(next.calendars || [])
       if (next.google_connected) toast.success('Agenda Google acessível.')
       else toast.error(next.message || 'Agenda Google não conectada.')
     } catch (err: any) {
@@ -124,8 +175,10 @@ export default function ConsultantSettings() {
           if (next.google_connected || attempts >= 45) {
             window.clearInterval(timer)
             setConnecting(false)
-            if (next.google_connected) toast.success('Google Calendar conectado.')
-            else toast.info(next.message || 'Use Testar para confirmar a conexão.')
+            if (next.google_connected) {
+              setCalendars(next.calendars || [])
+              toast.success('Google Calendar conectado.')
+            } else toast.info(next.message || 'Use Testar para confirmar a conexão.')
           }
         } catch (_) {
           if (attempts >= 45) {
@@ -138,6 +191,28 @@ export default function ConsultantSettings() {
       setConnecting(false)
       toast.error(err.message || 'Não foi possível iniciar o OAuth.')
     }
+  }
+
+  const selectedCalendarIds = splitCalendarIds(form.google_calendar_id)
+  const isCalendarSelected = (calendar: GoogleCalendarSource) =>
+    selectedCalendarIds.some((id) => normalizeCalendarId(id, calendar) === calendar.id)
+  const creationCalendarId = selectedCalendarIds[0] || 'primary'
+  const isCreationCalendar = (calendar: GoogleCalendarSource) =>
+    normalizeCalendarId(creationCalendarId, calendar) === calendar.id
+  const toggleCalendar = (calendar: GoogleCalendarSource, checked: boolean) => {
+    let nextIds = selectedCalendarIds.filter(
+      (id) => normalizeCalendarId(id, calendar) !== calendar.id,
+    )
+    if (checked) nextIds.push(calendar.id)
+    if (!nextIds.length) nextIds = [calendar.primary ? 'primary' : calendar.id]
+    setForm({ ...form, google_calendar_id: joinCalendarIds(nextIds) })
+  }
+  const chooseCreationCalendar = (calendar: GoogleCalendarSource) => {
+    const nextIds = [
+      calendar.id,
+      ...selectedCalendarIds.filter((id) => normalizeCalendarId(id, calendar) !== calendar.id),
+    ]
+    setForm({ ...form, google_calendar_id: joinCalendarIds(nextIds) })
   }
 
   const changeOwnPassword = async () => {
@@ -191,7 +266,7 @@ export default function ConsultantSettings() {
 
   if (!consultant) return <div className="text-muted-foreground">Carregando configurações...</div>
 
-  const connected = status?.google_connected || consultant.google_sync_status === 'connected'
+  const connected = status ? status.google_connected : consultant.google_sync_status === 'connected'
 
   return (
     <form onSubmit={save} className="space-y-6 animate-fade-in-up">
@@ -320,6 +395,82 @@ export default function ConsultantSettings() {
             </div>
           </div>
           {status?.message && <p className="text-sm text-muted-foreground">{status.message}</p>}
+
+          {connected && (
+            <div className="space-y-3 rounded-lg border border-border bg-background/40 p-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <Label>Agendas usadas no agendamento</Label>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    A primeira agenda selecionada cria o evento; todas as selecionadas bloqueiam
+                    conflitos no fluxo do cliente.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => loadGoogleCalendars()}
+                  disabled={loadingCalendars}
+                >
+                  {loadingCalendars ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                  )}
+                  Atualizar agendas
+                </Button>
+              </div>
+
+              {calendars.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Teste a conexão para carregar as agendas disponíveis desta conta Google.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {calendars.map((calendar) => {
+                    const selected = isCalendarSelected(calendar)
+                    const creation = isCreationCalendar(calendar)
+                    return (
+                      <div
+                        key={calendar.id}
+                        className="grid gap-3 rounded-md border border-border bg-secondary p-3 sm:grid-cols-[1fr_auto_auto] sm:items-center"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-white">
+                            {calendar.summary}
+                          </p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {calendar.primary ? 'Principal' : calendar.id}
+                          </p>
+                        </div>
+                        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 accent-primary"
+                            checked={selected}
+                            onChange={(event) => toggleCalendar(calendar, event.target.checked)}
+                          />
+                          Ver conflitos
+                        </label>
+                        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <input
+                            type="radio"
+                            name="creation_calendar"
+                            className="h-4 w-4 accent-primary"
+                            checked={creation}
+                            onChange={() => chooseCreationCalendar(calendar)}
+                            disabled={!calendar.writable}
+                          />
+                          Criar evento
+                        </label>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 

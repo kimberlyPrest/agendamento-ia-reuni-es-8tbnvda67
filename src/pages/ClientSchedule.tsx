@@ -5,15 +5,24 @@ import { bookMeeting, getAvailableSlots, rescheduleMeeting } from '@/services/ap
 import { Calendar } from '@/components/ui/calendar'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { differenceInHours, format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { Clock, ArrowLeft, AlertCircle } from 'lucide-react'
+import { Clock, ArrowLeft, AlertCircle, CalendarCheck } from 'lucide-react'
 
 type Slot = {
   time: string
   start_time: string
   end_time: string
   available?: boolean
+}
+
+type CalendarContext = {
+  google_connected?: boolean
+  google_connected_email?: string
+  calendar_source_count?: number
+  busy_calendar_ids?: string[]
+  uses_calendar_list?: boolean
 }
 
 export default function ClientSchedule() {
@@ -57,6 +66,7 @@ export default function ClientSchedule() {
   const [loading, setLoading] = useState(false)
   const [booking, setBooking] = useState(false)
   const [error, setError] = useState('')
+  const [calendarContext, setCalendarContext] = useState<CalendarContext | null>(null)
 
   useEffect(() => {
     if (!client) navigate('/')
@@ -100,9 +110,17 @@ export default function ClientSchedule() {
         )
       }
       setSlots(nextSlots)
+      setCalendarContext({
+        google_connected: data.google_connected,
+        google_connected_email: data.google_connected_email,
+        calendar_source_count: data.calendar_source_count,
+        busy_calendar_ids: data.busy_calendar_ids || [],
+        uses_calendar_list: data.uses_calendar_list,
+      })
       if (data.setup_required) setError(data.message || 'Agenda Google ainda não conectada.')
     } catch (err: any) {
       setSlots([])
+      setCalendarContext(null)
       setError(err.message || 'Não foi possível buscar horários.')
     } finally {
       setLoading(false)
@@ -155,6 +173,26 @@ export default function ClientSchedule() {
           Agenda do(a) {consultant?.name}. Fuso horário: Horário de Brasília.
         </p>
       </div>
+
+      {calendarContext?.google_connected && (
+        <div className="flex flex-col gap-3 rounded-lg border border-border bg-secondary p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <CalendarCheck className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-white">Agenda Google sincronizada</p>
+              <p className="text-xs text-muted-foreground">
+                Os horários abaixo respeitam a janela de atendimento e conflitos encontrados em{' '}
+                {calendarContext.calendar_source_count || 1} agenda(s) do consultor.
+              </p>
+            </div>
+          </div>
+          <Badge variant="outline" className="w-fit border-primary/30 text-primary">
+            Atualizado em tempo real
+          </Badge>
+        </div>
+      )}
 
       {isLateReschedule && (
         <div className="text-sm text-[#FFB800] bg-[#FFB800]/10 border border-[#FFB800]/20 rounded-md p-3 flex gap-2">

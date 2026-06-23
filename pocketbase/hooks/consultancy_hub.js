@@ -815,72 +815,209 @@ routerAdd('POST', '/backend/v1/hub/{path...}', (e) => {
       headers: { 'x-api-key': apiKey, 'content-type': 'application/json' },
       timeout: 45,
     })
-    if (res.statusCode < 200 || res.statusCode >= 300)
-      throw new Error('tl;dv recusou a requisicao.')
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      const detail = (res.json || {}).message || (res.json || {}).name || res.raw || ''
+      throw new Error(
+        detail ? `tl;dv recusou a requisicao: ${detail}` : 'tl;dv recusou a requisicao.',
+      )
+    }
     return res.json || {}
+  }
+  const tldvMeetings = (apiKey) => {
+    const meetings = []
+    let page = 0
+    let pages = 1
+    while (page < pages && page < 10) {
+      let data = null
+      try {
+        data = tldvRequest(apiKey, `/meetings?page=${page}&pageSize=100`)
+      } catch (err) {
+        if (page > 0) throw err
+        data = tldvRequest(apiKey, '/meetings')
+      }
+      const results = data.results || data.meetings || []
+      results.forEach((meeting) => meetings.push(meeting))
+      if (data.pages !== undefined && data.pages !== null)
+        pages = Math.max(1, Number(data.pages) || 1)
+      else if (data.hasMore) pages = page + 2
+      else pages = page + 1
+      if (!results.length) break
+      page += 1
+    }
+    return meetings
   }
   const transcriptToText = (transcript) =>
     ((transcript || {}).data || [])
       .map((item) => `${item.speaker || 'Participante'}: ${item.text || ''}`)
       .join('\n\n')
-  const syncTldvForConsultant = (consultant) => {
-    const apiKey = consultant.get('tldv_api_key') || env('TLDV_API_KEY')
-    if (!apiKey) return { enabled: false, checked: 0, updated: 0 }
-    const meetingsData = tldvRequest(apiKey, '/meetings')
-    const remoteMeetings = meetingsData.results || meetingsData.meetings || []
-    const localMeetings = $app.findRecordsByFilter(
-      'meetings',
-      `consultant_id = '${consultant.id}' && status != 'cancelled'`,
-      '-start_time',
-      200,
-      0,
-    )
-    let updated = 0
-    localMeetings.forEach((meeting) => {
-      if (meeting.get('tldv_meeting_id')) return
-      let client = null
-      try {
-        client = $app.findRecordById('clients', meeting.get('client_id'))
-      } catch (_) {}
-      const email = normalizeEmail(client && client.get('email'))
-      const start = parseDate(meeting.get('start_time'))
-      const match = remoteMeetings.find((remote) => {
-        const happenedAt = parseHubspotDate(
-          remote.happenedAt || remote.createdAt || remote.startedAt,
-        )
-        const invitees = remote.invitees || []
-        const emailMatch = invitees.some((invitee) => normalizeEmail(invitee.email) === email)
-        const titleMatch = String(remote.name || '')
-          .toLowerCase()
-          .includes(String(meeting.get('title') || '').toLowerCase())
-        const timeMatch =
-          start && happenedAt
-            ? Math.abs(happenedAt.getTime() - start.getTime()) < 36 * 60 * 60 * 1000
-            : true
-        return timeMatch && (emailMatch || titleMatch)
+  const escapeFilterValue = (value) =>
+    String(value || '')
+      .replace(/\\/g, '\\\\')
+      .replace(/'/g, "\\'")
+  const collectEmailsFromValue = (value, emails) => {
+    if (value === undefined || value === null) return
+    if (Array.isArray(value)) {
+      value.forEach((item) => collectEmailsFromValue(item, emails))
+      return
+    }
+    if (typeof value === 'object') {
+      Object.keys(value).forEach((key) => collectEmailsFromValue(value[key], emails))
+      return
+    }
+    String(value)
+      .split(/[\s,;<>"'()]+/)
+      .map((item) => normalizeEmail(item))
+      .filter((item) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(item))
+      .forEach((email) => {
+        if (emails.indexOf(email) === -1) emails.push(email)
       })
-      if (!match || !match.id) return
-      meeting.set('tldv_meeting_id', match.id)
-      meeting.set('tldv_url', match.url || '')
-      meeting.set('recording_url', match.url || '')
+  }
+  const remoteMeetingEmails = (meeting) => {
+    const emails = []
+    collectEmailsFromValue(meeting.organizer, emails)
+    collectEmailsFromValue(meeting.invitees, emails)
+    collectEmailsFromValue(meeting.attendees, emails)
+    collectEmailsFromValue(meeting.participants, emails)
+    collectEmailsFromValue(meeting.extraProperties, emails)
+    return emails
+  }
+  const remoteMeetingDate = (meeting) =>
+    parseHubspotDate(
+      meeting.happenedAt || meeting.startedAt || meeting.startTime || meeting.createdAt,
+    )
+  const remoteMeetingEnd = (meeting, startedAt) => {
+    const durationSeconds = Number(meeting.duration || 0)
+    const durationMs = durationSeconds > 0 ? durationSeconds * 1000 : 60 * 60 * 1000
+    return new Date(startedAt.getTime() + durationMs)
+  }
+  const findTldvMeeting = (clientId, tldvMeetingId) => {
+    try {
+      return (
+        $app.findRecordsByFilter(
+          'meetings',
+          `client_id = '${escapeFilterValue(clientId)}' && tldv_meeting_id = '${escapeFilterValue(tldvMeetingId)}'`,
+          '-start_time',
+          1,
+          0,
+        )[0] || null
+      )
+    } catch (_) {
+      return null
+    }
+  }
+  const findNearestClientMeeting = (consultantId, clientId, startedAt) => {
+    try {
+      const meetings = $app.findRecordsByFilter(
+        'meetings',
+        `consultant_id = '${escapeFilterValue(consultantId)}' && client_id = '${escapeFilterValue(clientId)}' && status != 'cancelled'`,
+        '-start_time',
+        100,
+        0,
+      )
+      let best = null
+      let bestDelta = 48 * 60 * 60 * 1000
+      meetings.forEach((meeting) => {
+        const start = parseDate(meeting.get('start_time'))
+        if (!start) return
+        const delta = Math.abs(start.getTime() - startedAt.getTime())
+        if (delta < bestDelta) {
+          best = meeting
+          bestDelta = delta
+        }
+      })
+      return best
+    } catch (_) {
+      return null
+    }
+  }
+  const upsertTldvMeeting = (apiKey, consultant, client, remote) => {
+    if (!remote.id) return { updated: false, created: false }
+    const startedAt = remoteMeetingDate(remote)
+    if (!startedAt) return { updated: false, created: false }
+    const endedAt = remoteMeetingEnd(remote, startedAt)
+    let meeting = findTldvMeeting(client.id, remote.id)
+    let created = false
+    if (!meeting) meeting = findNearestClientMeeting(consultant.id, client.id, startedAt)
+    if (!meeting) {
+      meeting = new Record($app.findCollectionByNameOrId('meetings'))
+      meeting.set('client_id', client.id)
+      meeting.set('consultant_id', consultant.id)
+      meeting.set('program_id', client.get('program_id'))
+      meeting.set('start_time', pbDate(startedAt))
+      meeting.set('end_time', pbDate(endedAt))
+      meeting.set('meeting_number', Math.max(1, Number(client.get('current_meeting_number') || 1)))
+      meeting.set('source', 'tldv')
+      created = true
+    }
+    if (!meeting.get('title')) meeting.set('title', remote.name || 'Reunião Elite')
+    if (!meeting.get('end_time')) meeting.set('end_time', pbDate(endedAt))
+    if (!meeting.get('start_time')) meeting.set('start_time', pbDate(startedAt))
+    if (!meeting.get('program_id')) meeting.set('program_id', client.get('program_id'))
+    if (!meeting.get('consultant_id')) meeting.set('consultant_id', consultant.id)
+    if (!meeting.get('client_id')) meeting.set('client_id', client.id)
+    meeting.set('status', 'completed')
+    meeting.set('tldv_meeting_id', remote.id)
+    meeting.set('tldv_url', remote.url || meeting.get('tldv_url') || '')
+    meeting.set('recording_url', remote.url || meeting.get('recording_url') || '')
+    if (!meeting.get('source')) meeting.set('source', created ? 'tldv' : 'google_calendar')
+    if (!meeting.get('tldv_transcript_text')) {
       try {
-        const transcript = tldvRequest(apiKey, `/meetings/${match.id}/transcript`)
+        const transcript = tldvRequest(apiKey, `/meetings/${remote.id}/transcript`)
         meeting.set('tldv_transcript', transcript)
         meeting.set('tldv_transcript_text', transcriptToText(transcript))
       } catch (_) {}
+    }
+    if (!meeting.get('tldv_notes_markdown')) {
       try {
-        const notes = tldvRequest(apiKey, `/meetings/${match.id}/notes`)
+        const notes = tldvRequest(apiKey, `/meetings/${remote.id}/notes`)
         meeting.set('tldv_notes', notes)
         meeting.set('tldv_notes_markdown', notes.markdownContent || '')
       } catch (_) {}
-      meeting.set('tldv_synced_at', pbDate(new Date()))
-      $app.save(meeting)
-      updated += 1
+    }
+    meeting.set('tldv_synced_at', pbDate(new Date()))
+    $app.save(meeting)
+    return { updated: !created, created }
+  }
+  const syncTldvForConsultant = (consultant) => {
+    const apiKey = consultant.get('tldv_api_key') || env('TLDV_API_KEY')
+    if (!apiKey) return { enabled: false, checked: 0, matched: 0, updated: 0, created: 0 }
+    const clients = $app.findRecordsByFilter(
+      'clients',
+      `consultant_id = '${escapeFilterValue(consultant.id)}'`,
+      'name',
+      1000,
+      0,
+    )
+    const clientsByEmail = {}
+    clients.forEach((client) => {
+      const email = normalizeEmail(client.get('email'))
+      if (email) clientsByEmail[email] = client
     })
-    writeSyncLog('tldv', 'success', remoteMeetings.length, updated, 'tl;dv sincronizado.', {
-      consultant_id: consultant.id,
+    const remoteMeetings = tldvMeetings(apiKey)
+    let matched = 0
+    let updated = 0
+    let created = 0
+    remoteMeetings.forEach((remote) => {
+      const clientIds = {}
+      remoteMeetingEmails(remote).forEach((email) => {
+        const client = clientsByEmail[email]
+        if (!client || clientIds[client.id]) return
+        clientIds[client.id] = true
+        matched += 1
+        const result = upsertTldvMeeting(apiKey, consultant, client, remote)
+        if (result.created) created += 1
+        if (result.updated) updated += 1
+      })
     })
-    return { enabled: true, checked: remoteMeetings.length, updated }
+    writeSyncLog(
+      'tldv',
+      'success',
+      remoteMeetings.length,
+      updated + created,
+      'tl;dv sincronizado por email dos clientes.',
+      { consultant_id: consultant.id, matched, created, updated },
+    )
+    return { enabled: true, checked: remoteMeetings.length, matched, updated, created }
   }
 
   if (route === 'auth/change-password') {
@@ -971,6 +1108,7 @@ routerAdd('POST', '/backend/v1/hub/{path...}', (e) => {
         'email',
         'photo_url',
         'tldv_api_key',
+        'google_calendar_id',
         'working_timezone',
       ].forEach((field) => {
         if (body[field] !== undefined) consultant.set(field, body[field])

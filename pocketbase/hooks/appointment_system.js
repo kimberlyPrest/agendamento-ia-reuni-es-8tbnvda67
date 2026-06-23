@@ -120,27 +120,65 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
       scopes.includes('https://www.googleapis.com/auth/calendar.calendarlist')
     )
   }
-  const googleBusyCalendarIds = (consultant, accessToken) => {
+  const googleCalendarList = (consultant, accessToken) => {
     const configured = configuredGoogleCalendarIds(consultant)
-    if (!hasCalendarListScope(consultant)) return configured
-    try {
+    const calendars = []
+    let pageToken = ''
+    let page = 0
+    do {
+      const query = formEncode({
+        minAccessRole: 'freeBusyReader',
+        showDeleted: 'false',
+        showHidden: 'false',
+        maxResults: 250,
+        pageToken,
+      })
       const res = $http.send({
-        url: `${GOOGLE_CALENDAR_BASE}/users/me/calendarList?minAccessRole=freeBusyReader&showDeleted=false&showHidden=false&maxResults=250`,
+        url: `${GOOGLE_CALENDAR_BASE}/users/me/calendarList?${query}`,
         method: 'GET',
         headers: { authorization: `Bearer ${accessToken}` },
         timeout: 30,
       })
-      if (res.statusCode < 200 || res.statusCode >= 300) return configured
-      const selected = ((res.json || {}).items || [])
-        .filter((item) =>
-          Boolean(
-            item &&
-            item.id &&
-            !item.deleted &&
-            (item.primary || item.selected || configured.indexOf(item.id) !== -1),
-          ),
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        const detail = ((res.json || {}).error || {}).message || ''
+        throw new Error(
+          detail
+            ? `Google Calendar recusou a lista de agendas: ${detail}`
+            : 'Não foi possível listar agendas do Google Calendar.',
         )
-        .map((item) => item.id)
+      }
+      ;((res.json || {}).items || []).forEach((item) => {
+        if (!item || !item.id || item.deleted) return
+        const accessRole = item.accessRole || ''
+        const isConfigured =
+          configured.indexOf(item.id) !== -1 ||
+          (item.primary && configured.indexOf('primary') !== -1)
+        calendars.push({
+          id: item.id,
+          summary: item.summaryOverride || item.summary || item.id,
+          description: item.description || '',
+          primary: Boolean(item.primary),
+          selected: Boolean(item.selected),
+          configured: isConfigured,
+          access_role: accessRole,
+          writable: accessRole === 'owner' || accessRole === 'writer',
+          background_color: item.backgroundColor || '',
+          foreground_color: item.foregroundColor || '',
+          time_zone: item.timeZone || '',
+        })
+      })
+      pageToken = (res.json || {}).nextPageToken || ''
+      page += 1
+    } while (pageToken && page < 10)
+    return calendars
+  }
+  const googleBusyCalendarIds = (consultant, accessToken) => {
+    const configured = configuredGoogleCalendarIds(consultant)
+    if (!hasCalendarListScope(consultant)) return configured
+    try {
+      const selected = googleCalendarList(consultant, accessToken)
+        .filter((item) => item.primary || item.selected || item.configured)
+        .map((item) => (item.primary && configured.indexOf('primary') !== -1 ? 'primary' : item.id))
       return uniqueValues(configured.concat(selected)).slice(0, 50)
     } catch (_) {
       return configured
@@ -433,6 +471,32 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
                 : 'Agenda Google do consultor ainda não está conectada por OAuth.',
         })
       }
+      const accessToken = refreshGoogleAccessToken(consultant, true)
+      if (!accessToken) throw new Error('Google Calendar não conectado.')
+      const configuredCalendarIds = configuredGoogleCalendarIds(consultant)
+      const busyCalendarIds = googleBusyCalendarIds(consultant, accessToken)
+      const calendarList = hasCalendarListScope(consultant)
+        ? googleCalendarList(consultant, accessToken)
+        : []
+      const calendarSources = busyCalendarIds.map((calendarId) => {
+        const calendar =
+          calendarList.find((item) => item.id === calendarId) ||
+          (calendarId === 'primary' ? calendarList.find((item) => item.primary) : null)
+        return {
+          id: calendarId,
+          summary: calendar
+            ? calendar.summary
+            : calendarId === 'primary'
+              ? 'Agenda principal'
+              : calendarId,
+          primary: calendar ? calendar.primary : calendarId === 'primary',
+          selected: calendar ? calendar.selected : false,
+          configured: configuredCalendarIds.indexOf(calendarId) !== -1,
+          writable: calendar
+            ? calendar.writable
+            : calendarId === writableGoogleCalendarId(consultant),
+        }
+      })
       const debugSlots = e.request.url.query().get('debug') === '1' && requireAdmin()
       const slotResult = buildSlots(consultant, program, dateStr, ignoreMeetingId, debugSlots)
       let slots = debugSlots ? slotResult.slots : slotResult
@@ -455,6 +519,13 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
       const response = {
         slots,
         google_connected: true,
+        google_connected_email: consultant.get('google_connected_email') || '',
+        creation_calendar_id: writableGoogleCalendarId(consultant),
+        configured_calendar_ids: configuredCalendarIds,
+        busy_calendar_ids: busyCalendarIds,
+        calendar_sources: calendarSources,
+        calendar_source_count: calendarSources.length,
+        uses_calendar_list: hasCalendarListScope(consultant),
         timezone: textValue(consultant, 'working_timezone', BR_TIMEZONE),
         late_reschedule: lateReschedule,
         earliest_start_time: earliestStart ? earliestStart.toISOString() : '',
@@ -496,6 +567,7 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
           status,
           connected_email: consultant.get('google_connected_email') || '',
           calendar_id: writableGoogleCalendarId(consultant),
+          configured_calendar_ids: configuredGoogleCalendarIds(consultant),
           message:
             status === 'missing_refresh_token'
               ? 'Google autorizou, mas não enviou refresh token. Revogue o acesso do app na sua conta Google e conecte novamente.'
@@ -504,14 +576,21 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
                 : 'Agenda Google do consultor ainda não está conectada por OAuth.',
         })
       }
+      const accessToken = refreshGoogleAccessToken(consultant, true)
+      if (!accessToken) throw new Error('Google Calendar não conectado.')
+      const calendars = hasCalendarListScope(consultant)
+        ? googleCalendarList(consultant, accessToken)
+        : []
       const todayStr = brDateString(new Date())
       const bounds = localDayBounds(todayStr)
-      const busy = googleFreeBusy(consultant, bounds.start, bounds.end, true)
+      const busy = googleFreeBusy(consultant, bounds.start, bounds.end)
       return e.json(200, {
         google_connected: true,
         status: 'connected',
         connected_email: consultant.get('google_connected_email') || '',
         calendar_id: writableGoogleCalendarId(consultant),
+        configured_calendar_ids: configuredGoogleCalendarIds(consultant),
+        calendars,
         uses_calendar_list: hasCalendarListScope(consultant),
         busy_calendar_ids: uniqueValues(busy.map((item) => item.calendar_id)),
         busy_count_today: busy.length,
@@ -537,6 +616,29 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
             ? 'O refresh token do Google foi recusado. Revogue o acesso do app na sua conta Google e conecte novamente.'
             : err.message || 'Não foi possível consultar a agenda Google.',
       })
+    }
+  }
+
+  if (route === 'google/calendars') {
+    const consultantId =
+      e.request.url.query().get('consultant_id') || e.request.url.query().get('consultantId')
+    if (!consultantId) return bad('Consultor obrigatório')
+    try {
+      const consultant = $app.findRecordById('consultants', consultantId)
+      if (!canManageConsultant(consultant)) return forbidden()
+      if (!googleConfigReady())
+        return bad('Configure GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET no ambiente.')
+      if (!googleConnected(consultant)) return bad('Agenda Google ainda não conectada por OAuth.')
+      const accessToken = refreshGoogleAccessToken(consultant, true)
+      if (!accessToken) return bad('Agenda Google ainda não conectada por OAuth.')
+      const calendars = googleCalendarList(consultant, accessToken)
+      return e.json(200, {
+        calendars,
+        configured_calendar_ids: configuredGoogleCalendarIds(consultant),
+        calendar_id: writableGoogleCalendarId(consultant),
+      })
+    } catch (err) {
+      return bad(err.message || 'Erro ao listar agendas Google')
     }
   }
 
@@ -644,7 +746,7 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
   const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token'
   const GOOGLE_CALENDAR_BASE = 'https://www.googleapis.com/calendar/v3'
   const TALLY_API_BASE = 'https://api.tally.so'
-  const TALLY_FORM_ID = 'wdRX0N'
+  const DEFAULT_TALLY_FORM_ID = 'wdRX0N'
   const DAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
   const DEFAULT_SLOTS = ['09:00', '10:00', '11:00', '14:00', '15:00', '16:00', '17:00']
   const SLOT_STEP_MINUTES = 15
@@ -781,13 +883,14 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
             (item.primary || item.selected || configured.indexOf(item.id) !== -1),
           ),
         )
-        .map((item) => item.id)
+        .map((item) => (item.primary && configured.indexOf('primary') !== -1 ? 'primary' : item.id))
       return uniqueValues(configured.concat(selected)).slice(0, 50)
     } catch (_) {
       return configured
     }
   }
   const tallyApiReady = () => Boolean(env('TALLY_API_KEY'))
+  const tallyFormId = () => env('TALLY_FORM_ID') || DEFAULT_TALLY_FORM_ID
   const collectEmailCandidates = (value, emails) => {
     if (value === undefined || value === null) return
     if (Array.isArray(value)) {
@@ -809,9 +912,18 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
     ;(submission.responses || []).forEach((response) => {
       collectEmailCandidates(response.answer, emails)
       collectEmailCandidates(response.formattedAnswer, emails)
+      collectEmailCandidates(response.value, emails)
+      collectEmailCandidates(response.values, emails)
     })
+    ;(submission.fields || []).forEach((field) => {
+      collectEmailCandidates(field.value, emails)
+      collectEmailCandidates(field.answer, emails)
+    })
+    ;(submission.answers || []).forEach((answer) => collectEmailCandidates(answer, emails))
     collectEmailCandidates(submission.respondentEmail, emails)
+    collectEmailCandidates(submission.email, emails)
     collectEmailCandidates(submission.hiddenFields, emails)
+    collectEmailCandidates(submission, emails)
     return Array.from(new Set(emails))
   }
   const syncTallyAnsweredClients = () => {
@@ -823,13 +935,19 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
     const seenEmails = {}
     while (hasMore && page <= 20) {
       const res = $http.send({
-        url: `${TALLY_API_BASE}/forms/${TALLY_FORM_ID}/submissions?page=${page}&limit=500&filter=completed`,
+        url: `${TALLY_API_BASE}/forms/${tallyFormId()}/submissions?page=${page}&limit=500&filter=completed`,
         method: 'GET',
         headers: { authorization: `Bearer ${env('TALLY_API_KEY')}` },
         timeout: 30,
       })
-      if (res.statusCode < 200 || res.statusCode >= 300)
-        throw new Error('Não foi possível consultar respostas antigas do Tally.')
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        const detail = (res.json || {}).message || (res.json || {}).error || res.raw || ''
+        throw new Error(
+          detail
+            ? `Não foi possível consultar respostas antigas do Tally: ${detail}`
+            : 'Não foi possível consultar respostas antigas do Tally.',
+        )
+      }
       const data = res.json || {}
       const submissions = data.submissions || []
       checked += submissions.length
@@ -856,7 +974,13 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
       hasMore = Boolean(data.hasMore)
       page += 1
     }
-    return { enabled: true, checked, updated }
+    return {
+      enabled: true,
+      form_id: tallyFormId(),
+      checked,
+      updated,
+      matched_emails: Object.keys(seenEmails).length,
+    }
   }
   const findClientByEmail = (email) => {
     const normalized = normalizeEmail(email)
@@ -1546,7 +1670,7 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
   }
 
   if (route === 'tally/webhook') {
-    const TALLY_FORM_ID = 'wdRX0N'
+    const TALLY_FORM_ID = tallyFormId()
     const body = e.requestInfo().body || {}
     const data = (body || {}).data || {}
     const formId = String(

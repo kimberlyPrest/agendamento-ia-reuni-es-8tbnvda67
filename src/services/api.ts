@@ -72,6 +72,20 @@ export const startGoogleOAuth = async (consultantId: string) => {
   return data as { url: string }
 }
 
+export type GoogleCalendarSource = {
+  id: string
+  summary: string
+  description?: string
+  primary?: boolean
+  selected?: boolean
+  configured?: boolean
+  access_role?: string
+  writable?: boolean
+  background_color?: string
+  foreground_color?: string
+  time_zone?: string
+}
+
 export const getGoogleCalendarStatus = async (consultantId: string) => {
   const params = new URLSearchParams({ consultant_id: consultantId })
   const res = await fetch(`${baseUrl}/backend/v1/google/calendar/status?${params.toString()}`, {
@@ -85,9 +99,25 @@ export const getGoogleCalendarStatus = async (consultantId: string) => {
     connected_email?: string
     calendar_id?: string
     uses_calendar_list?: boolean
+    configured_calendar_ids?: string[]
+    calendars?: GoogleCalendarSource[]
     busy_calendar_ids?: string[]
     busy_count_today?: number
     message?: string
+  }
+}
+
+export const getGoogleCalendars = async (consultantId: string) => {
+  const params = new URLSearchParams({ consultant_id: consultantId })
+  const res = await fetch(`${baseUrl}/backend/v1/google/calendars?${params.toString()}`, {
+    headers: { Authorization: pb.authStore.token },
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok || data.error) throw new Error(data.message || data.error || 'Erro ao listar agendas')
+  return data as {
+    calendars: GoogleCalendarSource[]
+    configured_calendar_ids?: string[]
+    calendar_id?: string
   }
 }
 
