@@ -42,6 +42,7 @@ export const bookMeeting = (clientId: string, startTime: string, endTime: string
 export const cancelMeeting = (meetingId: string, clientId: string, reason?: string) =>
   apiRequest<any>('/backend/v1/calendar/cancel', {
     method: 'POST',
+    headers: pb.authStore.token ? { Authorization: pb.authStore.token } : undefined,
     body: JSON.stringify({ meeting_id: meetingId, client_id: clientId, reason }),
   })
 

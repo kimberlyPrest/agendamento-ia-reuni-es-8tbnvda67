@@ -27,14 +27,12 @@ export default function ClientStatus() {
   }, [client, navigate])
 
   useEffect(() => {
-    if (!client || client.form_answered) return
-    const program = client.expand?.program_id
-    if (program?.require_tally === false) return
+    if (!client || client.form_answered || !stats?.requires_tally) return
     const interval = window.setInterval(() => {
       refreshClient().catch(() => undefined)
     }, 5000)
     return () => window.clearInterval(interval)
-  }, [client, refreshClient])
+  }, [client, stats?.requires_tally, refreshClient])
 
   if (!client) return null
 
@@ -94,7 +92,38 @@ export default function ClientStatus() {
     }
   }
 
-  if (!client.form_answered && program?.require_tally !== false) {
+  if (stats?.booking_blocked) {
+    return (
+      <section className="animate-fade-in-up space-y-6 text-center">
+        <p className="text-primary font-medium">{program?.name}</p>
+        <h2 className="font-display font-bold text-2xl">Agendamento indisponível</h2>
+        <Card className="bg-card border-destructive/40 shadow-none">
+          <CardContent className="p-6 space-y-5">
+            <div className="mx-auto w-12 h-12 bg-destructive/10 rounded-full flex items-center justify-center">
+              <AlertCircle className="w-6 h-6 text-destructive" />
+            </div>
+            <p className="text-muted-foreground leading-relaxed">
+              {stats.block_reason ||
+                'O status atual da consultoria não permite novos agendamentos.'}
+            </p>
+            {consultant?.whatsapp_number && (
+              <Button asChild size="lg" className="w-full">
+                <a
+                  href={`https://wa.me/${consultant.whatsapp_number}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Falar com o consultor <ArrowRight className="w-4 h-4 ml-2" />
+                </a>
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      </section>
+    )
+  }
+
+  if (stats?.requires_tally) {
     return (
       <section className="animate-fade-in-up space-y-6">
         <div className="text-center space-y-2">

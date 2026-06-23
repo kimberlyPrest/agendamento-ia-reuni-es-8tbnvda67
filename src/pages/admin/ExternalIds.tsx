@@ -24,7 +24,6 @@ const emptyForm = {
   name: '',
   consultant_id: '',
   program_id: '',
-  completed_meetings: 0,
 }
 
 export default function ExternalIds() {
@@ -64,7 +63,6 @@ export default function ExternalIds() {
         name: form.name.trim(),
         consultant_id: form.consultant_id,
         program_id: form.program_id,
-        completed_meetings: Number(form.completed_meetings || 0),
       }
       if (form.id) await pb.collection('external_ids').update(form.id, payload)
       else await pb.collection('external_ids').create(payload)
@@ -109,7 +107,7 @@ export default function ExternalIds() {
         <div>
           <h2 className="font-display text-2xl font-bold">IDs externos</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Relacione IDs do HubSpot/Sheets com consultores, programas e etapas concluídas.
+            Relacione IDs do HubSpot/Sheets com nomes legíveis, consultores e programas.
           </p>
         </div>
         <Button onClick={syncSheets} disabled={syncing}>
@@ -129,7 +127,7 @@ export default function ExternalIds() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={submit} className="grid gap-4 lg:grid-cols-6">
+          <form onSubmit={submit} className="grid gap-4 lg:grid-cols-5">
             <div className="space-y-2">
               <Label>Tipo</Label>
               <select
@@ -187,16 +185,7 @@ export default function ExternalIds() {
                 ))}
               </select>
             </div>
-            <div className="space-y-2">
-              <Label>Reuniões feitas</Label>
-              <Input
-                type="number"
-                min={0}
-                value={form.completed_meetings}
-                onChange={(e) => setForm({ ...form, completed_meetings: e.target.value })}
-              />
-            </div>
-            <div className="lg:col-span-6 flex gap-2">
+            <div className="lg:col-span-5 flex gap-2">
               <Button type="submit" disabled={saving}>
                 {saving ? 'Salvando...' : form.id ? 'Atualizar ID' : 'Salvar ID'}
               </Button>
@@ -219,7 +208,6 @@ export default function ExternalIds() {
               <TableHead>Nome</TableHead>
               <TableHead>Consultor</TableHead>
               <TableHead>Programa</TableHead>
-              <TableHead>Feitas</TableHead>
               <TableHead className="text-right">Ações</TableHead>
             </TableRow>
           </TableHeader>
@@ -237,7 +225,6 @@ export default function ExternalIds() {
                 <TableCell className="text-muted-foreground">
                   {programs.find((item) => item.id === record.program_id)?.name || '-'}
                 </TableCell>
-                <TableCell>{record.completed_meetings || 0}</TableCell>
                 <TableCell>
                   <div className="flex justify-end gap-2">
                     <Button
@@ -261,7 +248,7 @@ export default function ExternalIds() {
             ))}
             {records.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
                   Nenhum ID cadastrado ainda.
                 </TableCell>
               </TableRow>

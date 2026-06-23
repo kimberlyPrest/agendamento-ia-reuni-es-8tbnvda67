@@ -71,18 +71,120 @@ routerAdd('GET', '/backend/v1/hub/{path...}', (e) => {
     if (override > 0) return override
     return Number(program.get('total_meetings') || 1) + Number(client.get('extra_meetings') || 0)
   }
+  const boolValue = (record, field, fallback) => {
+    const value = record && record.get ? record.get(field) : record && record[field]
+    if (value === undefined || value === null || value === '') return fallback
+    return Boolean(value)
+  }
+  const normalizeStageText = (value) => {
+    const replacements = {
+      á: 'a',
+      à: 'a',
+      â: 'a',
+      ã: 'a',
+      ä: 'a',
+      é: 'e',
+      è: 'e',
+      ê: 'e',
+      ë: 'e',
+      í: 'i',
+      ì: 'i',
+      î: 'i',
+      ï: 'i',
+      ó: 'o',
+      ò: 'o',
+      ô: 'o',
+      õ: 'o',
+      ö: 'o',
+      ú: 'u',
+      ù: 'u',
+      û: 'u',
+      ü: 'u',
+      ç: 'c',
+      ª: 'a',
+      º: 'o',
+    }
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[áàâãäéèêëíìîïóòôõöúùûüçªº]/g, (char) => replacements[char] || char)
+  }
+  const stageMeetingNumber = (stage) => {
+    const match = normalizeStageText(stage).match(/(\d+)\s*(?:a|o)?/)
+    if (match) return Number(match[1])
+    const text = normalizeStageText(stage)
+    const words = [
+      ['primeira', 1],
+      ['primeiro', 1],
+      ['segunda', 2],
+      ['segundo', 2],
+      ['terceira', 3],
+      ['terceiro', 3],
+      ['quarta', 4],
+      ['quarto', 4],
+      ['quinta', 5],
+      ['quinto', 5],
+      ['sexta', 6],
+      ['sexto', 6],
+    ]
+    const found = words.find((item) => text.includes(item[0]))
+    return found ? found[1] : 0
+  }
+  const classifyClientStage = (client, program) => {
+    const stageText = client.get('deal_stage_name') || client.get('deal_stage_id') || ''
+    const text = normalizeStageText(stageText)
+    const limit = getProgramLimit(client, program)
+    const number = stageMeetingNumber(stageText)
+    const hasFinalized = text.includes('finalizad')
+    const hasPending = text.includes('pendent')
+    const hasRefund =
+      text.includes('reembolso') || text.includes('reembols') || text.includes('refund')
+    const hasNoShow =
+      text.includes('no show') || text.includes('noshow') || text.includes('no-show')
+    const asksTally =
+      text.includes('formulario nao preenchido') ||
+      text.includes('formulario nao respondido') ||
+      text.includes('formulario pendente') ||
+      text.includes('novos alunos') ||
+      text.includes('novo aluno')
+    let completed = Math.max(0, Number(client.get('current_meeting_number') || 1) - 1)
+    let finalisedByStage = false
+    if (stageText) completed = 0
+    if (hasRefund) completed = number > 0 ? Math.max(0, number - 1) : completed
+    else if (hasNoShow && number > 0)
+      completed = boolValue(program, 'no_show_counts_as_meeting', false)
+        ? number
+        : Math.max(0, number - 1)
+    else if (hasFinalized && number > 0) completed = number
+    else if (hasFinalized && number === 0) {
+      completed = limit
+      finalisedByStage = true
+    } else if (hasPending && number > 0) completed = Math.max(0, number - 1)
+    completed = Math.max(0, Math.min(completed, limit))
+    return {
+      stage_text: stageText,
+      stage_key: text,
+      stage_meeting_number: number,
+      completed_meetings: completed,
+      finalised_by_stage: finalisedByStage,
+      has_refund: hasRefund,
+      has_no_show: hasNoShow,
+      requires_tally:
+        boolValue(program, 'require_tally', true) &&
+        !client.get('form_answered') &&
+        (asksTally || !stageText),
+      booking_blocked: hasRefund,
+      block_reason: hasRefund
+        ? 'Status de reembolso: este cliente não pode agendar novas reuniões.'
+        : '',
+    }
+  }
   const getClientStats = (client) => {
     const program = $app.findRecordById('programs', client.get('program_id'))
     const meetings = getClientMeetings(client.id).filter(
       (meeting) => meeting.get('status') !== 'cancelled',
     )
     const now = new Date()
-    const completedFromMeetings = meetings.filter((meeting) => {
-      const start = parseDate(meeting.get('start_time'))
-      return meeting.get('status') === 'completed' || (start && start < now)
-    }).length
-    const completedFromStage = Math.max(0, Number(client.get('current_meeting_number') || 1) - 1)
-    const completed = Math.max(completedFromMeetings, completedFromStage)
     const future = meetings.filter((meeting) => {
       const start = parseDate(meeting.get('start_time'))
       return meeting.get('status') === 'scheduled' && start && start > now
@@ -98,12 +200,18 @@ routerAdd('GET', '/backend/v1/hub/{path...}', (e) => {
       (a, b) => parseDate(a.get('start_time')) - parseDate(b.get('start_time')),
     )[0]
     const limit = getProgramLimit(client, program)
+    const stageRules = classifyClientStage(client, program)
+    const completed = stageRules.completed_meetings
     return {
       completed_meetings: completed,
       future_meetings: future.length,
       max_meetings: limit,
       next_meeting_number: Math.min(limit + 1, completed + 1),
-      finalised: completed >= limit,
+      finalised: stageRules.finalised_by_stage || completed >= limit,
+      booking_blocked: stageRules.booking_blocked,
+      block_reason: stageRules.block_reason,
+      requires_tally: stageRules.requires_tally,
+      stage_rules: stageRules,
       last_meeting: lastMeeting
         ? expand(lastMeeting, ['program_id', 'consultant_id', 'client_id'])
         : null,
@@ -189,8 +297,10 @@ routerAdd('GET', '/backend/v1/hub/{path...}', (e) => {
           )
         : []
       const summaries = clients.map((client) => withClientSummary(client))
-      const activeClients = summaries.filter((item) => !item.stats.finalised).length
-      const overdueTally = clients.filter((client) => !client.get('form_answered')).length
+      const activeClients = summaries.filter(
+        (item) => !item.stats.finalised && !item.stats.booking_blocked,
+      ).length
+      const overdueTally = summaries.filter((item) => item.stats.requires_tally).length
       const finished = summaries.filter((item) => item.stats.finalised).length
       return e.json(200, {
         kpis: {
@@ -416,6 +526,88 @@ routerAdd('POST', '/backend/v1/hub/{path...}', (e) => {
     }
     return ensureDefaultProgram()
   }
+  const boolValue = (record, field, fallback) => {
+    const value = record && record.get ? record.get(field) : record && record[field]
+    if (value === undefined || value === null || value === '') return fallback
+    return Boolean(value)
+  }
+  const normalizeStageText = (value) => {
+    const replacements = {
+      á: 'a',
+      à: 'a',
+      â: 'a',
+      ã: 'a',
+      ä: 'a',
+      é: 'e',
+      è: 'e',
+      ê: 'e',
+      ë: 'e',
+      í: 'i',
+      ì: 'i',
+      î: 'i',
+      ï: 'i',
+      ó: 'o',
+      ò: 'o',
+      ô: 'o',
+      õ: 'o',
+      ö: 'o',
+      ú: 'u',
+      ù: 'u',
+      û: 'u',
+      ü: 'u',
+      ç: 'c',
+      ª: 'a',
+      º: 'o',
+    }
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[áàâãäéèêëíìîïóòôõöúùûüçªº]/g, (char) => replacements[char] || char)
+  }
+  const stageMeetingNumber = (stage) => {
+    const match = normalizeStageText(stage).match(/(\d+)\s*(?:a|o)?/)
+    if (match) return Number(match[1])
+    const text = normalizeStageText(stage)
+    const words = [
+      ['primeira', 1],
+      ['primeiro', 1],
+      ['segunda', 2],
+      ['segundo', 2],
+      ['terceira', 3],
+      ['terceiro', 3],
+      ['quarta', 4],
+      ['quarto', 4],
+      ['quinta', 5],
+      ['quinto', 5],
+      ['sexta', 6],
+      ['sexto', 6],
+    ]
+    const found = words.find((item) => text.includes(item[0]))
+    return found ? found[1] : 0
+  }
+  const stageProgress = (stageText, program, currentMeetingNumber) => {
+    const text = normalizeStageText(stageText)
+    const limit = Number(program.get('total_meetings') || 1)
+    const number = stageMeetingNumber(stageText)
+    const hasFinalized = text.includes('finalizad')
+    const hasPending = text.includes('pendent')
+    const hasRefund =
+      text.includes('reembolso') || text.includes('reembols') || text.includes('refund')
+    const hasNoShow =
+      text.includes('no show') || text.includes('noshow') || text.includes('no-show')
+    let completed = Math.max(0, Number(currentMeetingNumber || 1) - 1)
+    if (stageText) completed = 0
+    if (hasRefund) completed = number > 0 ? Math.max(0, number - 1) : completed
+    else if (hasNoShow && number > 0)
+      completed = boolValue(program, 'no_show_counts_as_meeting', false)
+        ? number
+        : Math.max(0, number - 1)
+    else if (hasFinalized && number > 0) completed = number
+    else if (hasFinalized && number === 0) completed = limit
+    else if (hasPending && number > 0) completed = Math.max(0, number - 1)
+    completed = Math.max(0, Math.min(completed, limit))
+    return { completed, next_meeting_number: completed + 1 }
+  }
   const parseHubspotDate = (value) => {
     if (value === undefined || value === null || value === '') return null
     const raw = String(value).trim()
@@ -584,9 +776,12 @@ routerAdd('POST', '/backend/v1/hub/{path...}', (e) => {
       client.set('sheet_row_number', index + 2)
       client.set('sheet_payload', { headers, row })
       client.set('sheet_synced_at', pbDate(new Date()))
-      if (stageMap && Number(stageMap.get('completed_meetings') || 0) >= 0) {
-        client.set('current_meeting_number', Number(stageMap.get('completed_meetings') || 0) + 1)
-      } else if (!client.get('current_meeting_number')) client.set('current_meeting_number', 1)
+      const progress = stageProgress(
+        stageMap ? stageMap.get('name') : stageId,
+        program,
+        client.get('current_meeting_number'),
+      )
+      client.set('current_meeting_number', progress.next_meeting_number)
       if (client.get('form_answered') === null || client.get('form_answered') === undefined)
         client.set('form_answered', false)
       $app.save(client)

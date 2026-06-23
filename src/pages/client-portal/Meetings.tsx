@@ -52,7 +52,12 @@ export default function ClientMeetings() {
       .finally(() => setLoading(false))
   }, [])
 
-  const canSchedule = portal && !portal.stats?.finalised && !portal.upcoming
+  const canSchedule =
+    portal &&
+    !portal.stats?.finalised &&
+    !portal.stats?.booking_blocked &&
+    !portal.stats?.requires_tally &&
+    !portal.upcoming
 
   if (loading) return <div className="text-muted-foreground">Carregando reuniões...</div>
 

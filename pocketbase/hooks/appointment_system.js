@@ -890,16 +890,113 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
     if (override > 0) return override
     return Number(program.get('total_meetings') || 1) + Number(client.get('extra_meetings') || 0)
   }
+  const normalizeStageText = (value) => {
+    const replacements = {
+      á: 'a',
+      à: 'a',
+      â: 'a',
+      ã: 'a',
+      ä: 'a',
+      é: 'e',
+      è: 'e',
+      ê: 'e',
+      ë: 'e',
+      í: 'i',
+      ì: 'i',
+      î: 'i',
+      ï: 'i',
+      ó: 'o',
+      ò: 'o',
+      ô: 'o',
+      õ: 'o',
+      ö: 'o',
+      ú: 'u',
+      ù: 'u',
+      û: 'u',
+      ü: 'u',
+      ç: 'c',
+      ª: 'a',
+      º: 'o',
+    }
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[áàâãäéèêëíìîïóòôõöúùûüçªº]/g, (char) => replacements[char] || char)
+  }
+  const stageMeetingNumber = (stage) => {
+    const match = normalizeStageText(stage).match(/(\d+)\s*(?:a|o)?/)
+    if (match) return Number(match[1])
+    const text = normalizeStageText(stage)
+    const words = [
+      ['primeira', 1],
+      ['primeiro', 1],
+      ['segunda', 2],
+      ['segundo', 2],
+      ['terceira', 3],
+      ['terceiro', 3],
+      ['quarta', 4],
+      ['quarto', 4],
+      ['quinta', 5],
+      ['quinto', 5],
+      ['sexta', 6],
+      ['sexto', 6],
+    ]
+    const found = words.find((item) => text.includes(item[0]))
+    return found ? found[1] : 0
+  }
+  const classifyClientStage = (client, program) => {
+    const stageText = client.get('deal_stage_name') || client.get('deal_stage_id') || ''
+    const text = normalizeStageText(stageText)
+    const limit = getProgramLimit(client, program)
+    const number = stageMeetingNumber(stageText)
+    const hasFinalized = text.includes('finalizad')
+    const hasPending = text.includes('pendent')
+    const hasRefund =
+      text.includes('reembolso') || text.includes('reembols') || text.includes('refund')
+    const hasNoShow =
+      text.includes('no show') || text.includes('noshow') || text.includes('no-show')
+    const asksTally =
+      text.includes('formulario nao preenchido') ||
+      text.includes('formulario nao respondido') ||
+      text.includes('formulario pendente') ||
+      text.includes('novos alunos') ||
+      text.includes('novo aluno')
+    let completed = Math.max(0, Number(client.get('current_meeting_number') || 1) - 1)
+    let finalisedByStage = false
+    if (stageText) completed = 0
+    if (hasRefund) completed = number > 0 ? Math.max(0, number - 1) : completed
+    else if (hasNoShow && number > 0)
+      completed = boolValue(program, 'no_show_counts_as_meeting', false)
+        ? number
+        : Math.max(0, number - 1)
+    else if (hasFinalized && number > 0) completed = number
+    else if (hasFinalized && number === 0) {
+      completed = limit
+      finalisedByStage = true
+    } else if (hasPending && number > 0) completed = Math.max(0, number - 1)
+    completed = Math.max(0, Math.min(completed, limit))
+    return {
+      stage_text: stageText,
+      stage_key: text,
+      stage_meeting_number: number,
+      completed_meetings: completed,
+      finalised_by_stage: finalisedByStage,
+      has_refund: hasRefund,
+      has_no_show: hasNoShow,
+      requires_tally:
+        boolValue(program, 'require_tally', true) &&
+        !client.get('form_answered') &&
+        (asksTally || !stageText),
+      booking_blocked: hasRefund,
+      block_reason: hasRefund
+        ? 'Status de reembolso: este cliente não pode agendar novas reuniões.'
+        : '',
+    }
+  }
   const getClientStats = (client, program) => {
     const now = new Date()
     const meetings = getClientMeetings(client.id)
     const active = meetings.filter((meeting) => meeting.get('status') !== 'cancelled')
-    const completed = active.filter((meeting) => {
-      const start = recordTime(meeting, 'start_time')
-      return meeting.get('status') === 'completed' || (start && start < now)
-    })
-    const completedFromStage = Math.max(0, Number(client.get('current_meeting_number') || 1) - 1)
-    const completedCount = Math.max(completed.length, completedFromStage)
     const future = active.filter((meeting) => {
       const start = recordTime(meeting, 'start_time')
       return meeting.get('status') === 'scheduled' && start && start > now
@@ -913,14 +1010,19 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
     const upcoming =
       future.sort((a, b) => recordTime(a, 'start_time') - recordTime(b, 'start_time'))[0] || null
     const limit = getProgramLimit(client, program)
-    const currentFromClient = Number(client.get('current_meeting_number') || 0)
-    const nextMeetingNumber = Math.max(currentFromClient || 1, completedCount + 1)
+    const stageRules = classifyClientStage(client, program)
+    const completedCount = stageRules.completed_meetings
+    const nextMeetingNumber = Math.min(limit + 1, completedCount + 1)
     return {
       completed_meetings: completedCount,
       future_meetings: future.length,
       max_meetings: limit,
       next_meeting_number: nextMeetingNumber,
-      finalised: completedCount >= limit || nextMeetingNumber > limit,
+      finalised: stageRules.finalised_by_stage || completedCount >= limit,
+      booking_blocked: stageRules.booking_blocked,
+      block_reason: stageRules.block_reason,
+      requires_tally: stageRules.requires_tally,
+      stage_rules: stageRules,
       last_meeting: lastMeeting ? expandMeeting(lastMeeting) : null,
       upcoming: upcoming ? expandMeeting(upcoming) : null,
     }
@@ -1113,9 +1215,9 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
     return busyIntervals
   }
   const assertBusinessRules = (client, consultant, program, start, end, ignoreMeetingId) => {
-    if (boolValue(program, 'require_tally', true) && !client.get('form_answered'))
-      return 'Antes de agendar, responda o formulário preparatório.'
     const stats = getClientStats(client, program)
+    if (stats.booking_blocked) return stats.block_reason
+    if (stats.requires_tally) return 'Antes de agendar, responda o formulário preparatório.'
     const futureLimit = boolValue(program, 'allow_concurrent', false)
       ? numberValue(program, 'max_future_meetings', 1)
       : 1
@@ -1284,13 +1386,14 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
     try {
       let client = expandClient(findClientByEmail(body.email))
       const program = $app.findRecordById('programs', client.get('program_id'))
-      if (boolValue(program, 'require_tally', true) && !client.get('form_answered')) {
+      let stats = getClientStats(client, program)
+      if (stats.requires_tally) {
         try {
           syncTallyAnsweredClients()
           client = expandClient($app.findRecordById('clients', client.id))
+          stats = getClientStats(client, program)
         } catch (_) {}
       }
-      const stats = getClientStats(client, program)
       const upcoming = getUpcomingMeeting(client.id)
       return e.json(200, {
         client,
@@ -1347,11 +1450,12 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
     if (!meetingId) return bad('Agendamento inválido')
     try {
       const meeting = $app.findRecordById('meetings', meetingId)
-      if (!clientId && !requireAdmin()) return forbidden()
-      if (clientId && meeting.get('client_id') !== clientId && !requireAdmin()) return forbidden()
       const consultant = $app.findRecordById('consultants', meeting.get('consultant_id'))
+      const canManage = canManageConsultant(consultant)
+      if (!clientId && !canManage) return forbidden()
+      if (clientId && meeting.get('client_id') !== clientId && !canManage) return forbidden()
       const program = $app.findRecordById('programs', meeting.get('program_id'))
-      if (!canChangeMeeting(meeting, program))
+      if (!canManage && !canChangeMeeting(meeting, program))
         return bad(
           `Cancelamentos exigem no mínimo ${nonNegativeNumberValue(program, 'min_reschedule_hours', 24)}h de antecedência.`,
         )

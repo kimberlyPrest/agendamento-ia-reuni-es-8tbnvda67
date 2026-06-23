@@ -133,7 +133,33 @@ export default function ClientCentral() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {finished ? (
+          {stats.booking_blocked ? (
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-medium text-destructive">Agendamento indisponível</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {stats.block_reason || 'O status atual não permite novas reuniões.'}
+                </p>
+              </div>
+              {whatsapp && (
+                <Button asChild>
+                  <a href={whatsapp} target="_blank" rel="noreferrer">
+                    Falar com consultor
+                  </a>
+                </Button>
+              )}
+            </div>
+          ) : stats.requires_tally ? (
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-medium">Formulário pendente</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Antes de agendar, responda o formulário preparatório pelo fluxo de agendamento.
+                </p>
+              </div>
+              <Button onClick={() => navigate('/status')}>Responder formulário</Button>
+            </div>
+          ) : finished ? (
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <div className="flex items-center gap-2 text-green-400">

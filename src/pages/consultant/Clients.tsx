@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { cancelMeeting } from '@/services/api'
 import { getConsultantClients } from '@/services/hub'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -13,6 +14,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Download, Search } from 'lucide-react'
+import { toast } from 'sonner'
 
 function text(value: any) {
   return String(value || '').toLowerCase()
@@ -39,11 +41,16 @@ export default function ConsultantClients() {
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState('all')
   const [tally, setTally] = useState('all')
+  const [cancellingId, setCancellingId] = useState('')
+
+  const loadClients = async () => {
+    const data = await getConsultantClients()
+    setRows(data.clients || [])
+    setLoading(false)
+  }
 
   useEffect(() => {
-    getConsultantClients()
-      .then((data) => setRows(data.clients || []))
-      .finally(() => setLoading(false))
+    loadClients().catch(() => setLoading(false))
   }, [])
 
   const filtered = useMemo(() => {
@@ -60,16 +67,36 @@ export default function ConsultantClients() {
         text(client.expand?.program_id?.name).includes(q)
       const matchesStatus =
         status === 'all' ||
-        (status === 'active' && !stats.finalised) ||
+        (status === 'active' && !stats.finalised && !stats.booking_blocked) ||
         (status === 'finished' && stats.finalised) ||
+        (status === 'blocked' && stats.booking_blocked) ||
         (status === 'scheduled' && stats.future_meetings > 0)
       const matchesTally =
         tally === 'all' ||
         (tally === 'answered' && client.form_answered) ||
-        (tally === 'pending' && !client.form_answered)
+        (tally === 'pending' && stats.requires_tally)
       return matchesQuery && matchesStatus && matchesTally
     })
   }, [rows, query, status, tally])
+
+  const cancelFutureMeeting = async (client: any, meeting: any) => {
+    if (!meeting?.id || !client?.id) return
+    if (!window.confirm(`Cancelar o agendamento futuro de ${client.name}?`)) return
+    setCancellingId(meeting.id)
+    try {
+      await cancelMeeting(
+        meeting.id,
+        client.id,
+        'Cancelado pelo consultor após status de reembolso.',
+      )
+      await loadClients()
+      toast.success('Agendamento cancelado.')
+    } catch (err: any) {
+      toast.error(err.message || 'Não foi possível cancelar o agendamento.')
+    } finally {
+      setCancellingId('')
+    }
+  }
 
   const downloadCsv = () => {
     const header = [
@@ -148,6 +175,7 @@ export default function ConsultantClients() {
             <option value="all">Todos os status</option>
             <option value="active">Ativos</option>
             <option value="finished">Finalizados</option>
+            <option value="blocked">Bloqueados/reembolso</option>
             <option value="scheduled">Com próxima reunião</option>
           </select>
           <select
@@ -190,9 +218,22 @@ export default function ConsultantClients() {
                     {client.deal_stage_name || client.deal_stage_id || '-'}
                   </TableCell>
                   <TableCell>
-                    <Badge variant={stats.finalised ? 'outline' : 'default'}>
-                      {stats.completed_meetings || 0}/{stats.max_meetings || 0}
-                    </Badge>
+                    <div className="space-y-1">
+                      <Badge
+                        variant={
+                          stats.finalised
+                            ? 'outline'
+                            : stats.booking_blocked
+                              ? 'destructive'
+                              : 'default'
+                        }
+                      >
+                        {stats.completed_meetings || 0}/{stats.max_meetings || 0}
+                      </Badge>
+                      {stats.booking_blocked && (
+                        <p className="text-xs text-destructive">Reembolso bloqueado</p>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell>
                     {stats.days_since_last_meeting === null ||
@@ -200,10 +241,38 @@ export default function ConsultantClients() {
                       ? 'Sem reunião'
                       : `${stats.days_since_last_meeting} dia(s)`}
                   </TableCell>
-                  <TableCell>{formatDate(stats.upcoming?.start_time)}</TableCell>
                   <TableCell>
-                    <Badge variant={client.form_answered ? 'default' : 'destructive'}>
-                      {client.form_answered ? 'Respondido' : 'Pendente'}
+                    <div className="space-y-2">
+                      <div>{formatDate(stats.upcoming?.start_time)}</div>
+                      {stats.booking_blocked && stats.upcoming && (
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          disabled={cancellingId === stats.upcoming.id}
+                          onClick={() => cancelFutureMeeting(client, stats.upcoming)}
+                        >
+                          {cancellingId === stats.upcoming.id
+                            ? 'Cancelando...'
+                            : 'Cancelar agendamento'}
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      variant={
+                        client.form_answered
+                          ? 'default'
+                          : stats.requires_tally
+                            ? 'destructive'
+                            : 'secondary'
+                      }
+                    >
+                      {client.form_answered
+                        ? 'Respondido'
+                        : stats.requires_tally
+                          ? 'Pendente'
+                          : 'Não exigido'}
                     </Badge>
                   </TableCell>
                 </TableRow>

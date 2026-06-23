@@ -17,7 +17,7 @@ type Slot = {
 }
 
 export default function ClientSchedule() {
-  const { client, upcomingMeeting, refreshClient } = useClientStore()
+  const { client, upcomingMeeting, stats, refreshClient } = useClientStore()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const rescheduleId = searchParams.get('reschedule')
@@ -52,7 +52,9 @@ export default function ClientSchedule() {
 
   useEffect(() => {
     if (!client) navigate('/')
-  }, [client, navigate])
+    else if (stats?.booking_blocked || stats?.requires_tally || stats?.finalised)
+      navigate('/status')
+  }, [client, stats?.booking_blocked, stats?.requires_tally, stats?.finalised, navigate])
 
   useEffect(() => {
     if (isLateReschedule && date && date.getTime() < minDateTime) {
