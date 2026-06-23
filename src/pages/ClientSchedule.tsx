@@ -8,7 +8,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { differenceInHours, format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { Clock, ArrowLeft, AlertCircle, CalendarCheck } from 'lucide-react'
+import { Clock, ArrowLeft, AlertCircle, CalendarCheck, MessageCircle } from 'lucide-react'
 
 type Slot = {
   time: string
@@ -157,6 +157,14 @@ export default function ClientSchedule() {
   const bookingWindow = Number(program?.booking_window_days || 60)
   const maxDate = new Date()
   maxDate.setDate(maxDate.getDate() + bookingWindow)
+  const consultantWhatsapp = String(consultant?.whatsapp_number || '').replace(/\D/g, '')
+  const consultantWhatsappUrl = consultantWhatsapp
+    ? `https://wa.me/${consultantWhatsapp}?text=${encodeURIComponent(
+        `Oi, ${consultant?.name || 'consultor(a)'}! Tentei agendar minha reunião pelo sistema, mas a agenda Google ainda não está conectada. Pode me ajudar?`,
+      )}`
+    : ''
+  const showWhatsappFallback =
+    Boolean(error) && calendarContext?.google_connected === false && Boolean(consultantWhatsappUrl)
 
   return (
     <section className="animate-fade-in-up space-y-6">
@@ -228,9 +236,24 @@ export default function ClientSchedule() {
                   Buscando horários...
                 </p>
               ) : error ? (
-                <div className="text-sm text-[#FFB800] bg-[#FFB800]/10 border border-[#FFB800]/20 rounded-md p-3 flex gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>{error}</span>
+                <div className="text-sm text-[#FFB800] bg-[#FFB800]/10 border border-[#FFB800]/20 rounded-md p-3 space-y-3">
+                  <div className="flex gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>{error}</span>
+                  </div>
+                  {showWhatsappFallback && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full border-[#FFB800]/30 text-[#FFB800] hover:bg-[#FFB800]/10 hover:text-[#FFB800]"
+                      onClick={() =>
+                        window.open(consultantWhatsappUrl, '_blank', 'noopener,noreferrer')
+                      }
+                    >
+                      <MessageCircle className="w-4 h-4 mr-2" />
+                      Falar com o consultor no WhatsApp
+                    </Button>
+                  )}
                 </div>
               ) : slots.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-4">
