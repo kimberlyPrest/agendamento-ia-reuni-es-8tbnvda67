@@ -186,17 +186,39 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
     return signature === signOAuthState(base)
   }
 
-  const parseWorkingHours = (consultant) => {
-    let value = consultant.get('working_hours') || {}
+  const looksLikeByte = (value) => {
+    const number = Number(value)
+    return Number.isInteger(number) && number >= 0 && number <= 255
+  }
+  const decodeByteJson = (value) => {
+    if (!value || typeof value !== 'object') return null
+    const items = Array.isArray(value)
+      ? value
+      : Object.keys(value)
+          .filter((key) => /^\d+$/.test(key))
+          .sort((a, b) => Number(a) - Number(b))
+          .map((key) => value[key])
+    if (items.length === 0 || !items.every(looksLikeByte)) return null
+    try {
+      return JSON.parse(items.map((item) => String.fromCharCode(Number(item))).join(''))
+    } catch (_) {
+      return null
+    }
+  }
+  const parseJsonField = (value) => {
+    if (!value) return {}
     if (typeof value === 'string') {
       try {
-        value = JSON.parse(value)
+        return JSON.parse(value)
       } catch (_) {
-        value = {}
+        return {}
       }
     }
-    return value || {}
+    const decoded = decodeByteJson(value)
+    if (decoded) return decoded
+    return typeof value === 'object' ? value : {}
   }
+  const parseWorkingHours = (consultant) => parseJsonField(consultant.get('working_hours'))
   const getRawDaySchedule = (consultant, dateStr) => {
     const wh = parseWorkingHours(consultant)
     const dow = new Date(`${dateStr}T12:00:00-03:00`).getUTCDay()
@@ -1205,17 +1227,39 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
       return null
     }
   }
-  const parseWorkingHours = (consultant) => {
-    let value = consultant.get('working_hours') || {}
+  const looksLikeByte = (value) => {
+    const number = Number(value)
+    return Number.isInteger(number) && number >= 0 && number <= 255
+  }
+  const decodeByteJson = (value) => {
+    if (!value || typeof value !== 'object') return null
+    const items = Array.isArray(value)
+      ? value
+      : Object.keys(value)
+          .filter((key) => /^\d+$/.test(key))
+          .sort((a, b) => Number(a) - Number(b))
+          .map((key) => value[key])
+    if (items.length === 0 || !items.every(looksLikeByte)) return null
+    try {
+      return JSON.parse(items.map((item) => String.fromCharCode(Number(item))).join(''))
+    } catch (_) {
+      return null
+    }
+  }
+  const parseJsonField = (value) => {
+    if (!value) return {}
     if (typeof value === 'string') {
       try {
-        value = JSON.parse(value)
+        return JSON.parse(value)
       } catch (_) {
-        value = {}
+        return {}
       }
     }
-    return value || {}
+    const decoded = decodeByteJson(value)
+    if (decoded) return decoded
+    return typeof value === 'object' ? value : {}
   }
+  const parseWorkingHours = (consultant) => parseJsonField(consultant.get('working_hours'))
   const getRawDaySchedule = (consultant, dateStr) => {
     const wh = parseWorkingHours(consultant)
     const dow = new Date(`${dateStr}T12:00:00-03:00`).getUTCDay()
