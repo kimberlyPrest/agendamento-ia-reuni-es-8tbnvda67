@@ -31,6 +31,20 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
       return false
     }
   }
+  const canManageConsultant = (consultant) => {
+    if (requireAdmin()) return true
+    if (!e.auth || !consultant) return false
+    try {
+      return (
+        e.auth.get('role') === 'consultant' &&
+        (consultant.get('user_id') === e.auth.id ||
+          String(consultant.get('email') || '').toLowerCase() ===
+            String(e.auth.email() || '').toLowerCase())
+      )
+    } catch (_) {
+      return false
+    }
+  }
   const parseDate = (value) => (value ? new Date(String(value).replace(' ', 'T')) : null)
   const pbDate = (date) => date.toISOString().replace('T', ' ')
   const numberValue = (record, field, fallback) => {
@@ -457,12 +471,12 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
   }
 
   if (route === 'google/calendar/status') {
-    if (!requireAdmin()) return forbidden()
     const consultantId =
       e.request.url.query().get('consultant_id') || e.request.url.query().get('consultantId')
     if (!consultantId) return bad('Consultor obrigatório')
     try {
       const consultant = $app.findRecordById('consultants', consultantId)
+      if (!canManageConsultant(consultant)) return forbidden()
       let status = textValue(consultant, 'google_sync_status', 'not_connected')
       if (!googleConfigReady()) {
         return e.json(200, {
@@ -527,7 +541,6 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
   }
 
   if (route === 'google/oauth/start') {
-    if (!requireAdmin()) return forbidden()
     const consultantId =
       e.request.url.query().get('consultant_id') || e.request.url.query().get('consultantId')
     if (!consultantId) return bad('Consultor obrigatório')
@@ -535,6 +548,7 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
       return bad('Configure GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET no ambiente.')
     try {
       const consultant = $app.findRecordById('consultants', consultantId)
+      if (!canManageConsultant(consultant)) return forbidden()
       const state = buildOAuthState(consultant.id)
       consultant.set('google_oauth_state', state)
       $app.save(consultant)
@@ -884,6 +898,8 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
       const start = recordTime(meeting, 'start_time')
       return meeting.get('status') === 'completed' || (start && start < now)
     })
+    const completedFromStage = Math.max(0, Number(client.get('current_meeting_number') || 1) - 1)
+    const completedCount = Math.max(completed.length, completedFromStage)
     const future = active.filter((meeting) => {
       const start = recordTime(meeting, 'start_time')
       return meeting.get('status') === 'scheduled' && start && start > now
@@ -898,13 +914,13 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
       future.sort((a, b) => recordTime(a, 'start_time') - recordTime(b, 'start_time'))[0] || null
     const limit = getProgramLimit(client, program)
     const currentFromClient = Number(client.get('current_meeting_number') || 0)
-    const nextMeetingNumber = Math.max(currentFromClient || 1, completed.length + 1)
+    const nextMeetingNumber = Math.max(currentFromClient || 1, completedCount + 1)
     return {
-      completed_meetings: completed.length,
+      completed_meetings: completedCount,
       future_meetings: future.length,
       max_meetings: limit,
       next_meeting_number: nextMeetingNumber,
-      finalised: completed.length >= limit || nextMeetingNumber > limit,
+      finalised: completedCount >= limit || nextMeetingNumber > limit,
       last_meeting: lastMeeting ? expandMeeting(lastMeeting) : null,
       upcoming: upcoming ? expandMeeting(upcoming) : null,
     }

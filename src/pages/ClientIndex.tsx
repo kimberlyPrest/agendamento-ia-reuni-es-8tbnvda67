@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useClientStore } from '@/stores/use-client-store'
 import { authClientByEmail } from '@/services/api'
 import { Button } from '@/components/ui/button'
@@ -77,6 +77,12 @@ export default function ClientIndex() {
               {!loading && <ArrowRight className="w-4 h-4 ml-2" />}
             </Button>
           </form>
+          <div className="mt-5 border-t border-border pt-4 text-sm text-muted-foreground">
+            Quer ver gravações, histórico e dados da consultoria?{' '}
+            <Link to="/login" className="text-primary hover:underline">
+              Entrar na central
+            </Link>
+          </div>
         </CardContent>
       </Card>
     </section>

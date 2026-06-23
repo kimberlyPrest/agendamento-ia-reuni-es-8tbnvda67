@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-15T17:25:00.840Z",
+  "generatedAt": "2026-06-23T17:16:37.348Z",
   "collections": [
     {
       "name": "users",
@@ -29,21 +29,30 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate"]
+          "autodateTriggers": [
+            "onCreate"
+          ]
         },
         {
           "name": "updated",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate", "onUpdate"]
+          "autodateTriggers": [
+            "onCreate",
+            "onUpdate"
+          ]
         },
         {
           "name": "role",
           "type": "select",
           "required": false,
           "system": false,
-          "selectValues": ["admin", "client", "consultant"]
+          "selectValues": [
+            "admin",
+            "client",
+            "consultant"
+          ]
         }
       ],
       "indexes": [
@@ -73,14 +82,19 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate"]
+          "autodateTriggers": [
+            "onCreate"
+          ]
         },
         {
           "name": "updated",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate", "onUpdate"]
+          "autodateTriggers": [
+            "onCreate",
+            "onUpdate"
+          ]
         },
         {
           "name": "name",
@@ -227,14 +241,19 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate"]
+          "autodateTriggers": [
+            "onCreate"
+          ]
         },
         {
           "name": "updated",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate", "onUpdate"]
+          "autodateTriggers": [
+            "onCreate",
+            "onUpdate"
+          ]
         },
         {
           "name": "working_timezone",
@@ -287,6 +306,30 @@
         {
           "name": "calendar_connected_at",
           "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "user_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "photo_url",
+          "type": "url",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "tldv_api_key",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "hubspot_owner_id",
+          "type": "text",
           "required": false,
           "system": false
         }
@@ -347,17 +390,120 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate"]
+          "autodateTriggers": [
+            "onCreate"
+          ]
         },
         {
           "name": "updated",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate", "onUpdate"]
+          "autodateTriggers": [
+            "onCreate",
+            "onUpdate"
+          ]
+        },
+        {
+          "name": "user_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "hubspot_deal_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "deal_name",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "deal_stage_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "deal_stage_name",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "deal_owner_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "deal_owner_name",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "contact_phone",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "closed_at",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "first_call_at",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "first_call_consultant_key",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "second_call_at",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "second_call_consultant_key",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "sheet_row_number",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "sheet_payload",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "sheet_synced_at",
+          "type": "date",
+          "required": false,
+          "system": false
         }
       ],
-      "indexes": ["CREATE UNIQUE INDEX `idx_clients_email` ON `clients` (email)"]
+      "indexes": [
+        "CREATE UNIQUE INDEX `idx_clients_email` ON `clients` (email)"
+      ]
     },
     {
       "name": "meetings",
@@ -420,24 +566,227 @@
           "type": "select",
           "required": false,
           "system": false,
-          "selectValues": ["scheduled", "cancelled", "completed"]
+          "selectValues": [
+            "scheduled",
+            "cancelled",
+            "completed"
+          ]
         },
         {
           "name": "created",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate"]
+          "autodateTriggers": [
+            "onCreate"
+          ]
         },
         {
           "name": "updated",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate", "onUpdate"]
+          "autodateTriggers": [
+            "onCreate",
+            "onUpdate"
+          ]
+        },
+        {
+          "name": "recording_url",
+          "type": "url",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "tldv_meeting_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "tldv_url",
+          "type": "url",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "tldv_transcript",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "tldv_transcript_text",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "tldv_notes",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "tldv_notes_markdown",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "tldv_synced_at",
+          "type": "date",
+          "required": false,
+          "system": false
         }
       ],
-      "indexes": ["CREATE INDEX `idx_meetings_start` ON `meetings` (start_time)"]
+      "indexes": [
+        "CREATE INDEX `idx_meetings_start` ON `meetings` (start_time)"
+      ]
+    },
+    {
+      "name": "external_ids",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.role = 'admin'",
+        "view": "@request.auth.role = 'admin'",
+        "create": "@request.auth.role = 'admin'",
+        "update": "@request.auth.role = 'admin'",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "kind",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "external_id",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "consultant_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "program_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "completed_meetings",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "metadata",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": [
+            "onCreate"
+          ]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": [
+            "onCreate",
+            "onUpdate"
+          ]
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "name": "sync_logs",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.role = 'admin'",
+        "view": "@request.auth.role = 'admin'",
+        "create": "@request.auth.role = 'admin'",
+        "update": "@request.auth.role = 'admin'",
+        "delete": "@request.auth.role = 'admin'"
+      },
+      "fields": [
+        {
+          "name": "source",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "checked",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "updated_count",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "message",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "payload",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": [
+            "onCreate"
+          ]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": [
+            "onCreate",
+            "onUpdate"
+          ]
+        }
+      ],
+      "indexes": []
     }
   ]
 }

@@ -1,0 +1,764 @@
+routerAdd('GET', '/backend/v1/hub/{path...}', (e) => {
+  const route = e.request.pathValue('path')
+  const DEFAULT_CLIENT_PASSWORD = 'AdaptaElite26'
+
+  const bad = (message) => e.json(400, { error: message, message })
+  const forbidden = () => e.json(403, { error: 'Acesso restrito.', message: 'Acesso restrito.' })
+  const notFound = () =>
+    e.json(404, { error: 'Rota nao encontrada', message: 'Rota nao encontrada' })
+  const normalizeEmail = (email) =>
+    String(email || '')
+      .trim()
+      .toLowerCase()
+  const parseDate = (value) => (value ? new Date(String(value).replace(' ', 'T')) : null)
+  const pbDate = (date) => date.toISOString().replace('T', ' ')
+  const daysBetween = (start, end) =>
+    Math.max(0, Math.floor((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)))
+  const role = () => {
+    if (!e.auth) return ''
+    try {
+      return e.auth.get('role') || ''
+    } catch (_) {
+      return ''
+    }
+  }
+  const isAdmin = () => role() === 'admin' || (e.hasSuperuserAuth && e.hasSuperuserAuth())
+  const isConsultant = () => role() === 'consultant'
+  const isClient = () => role() === 'client'
+  const requireAuth = () => Boolean(e.auth || (e.hasSuperuserAuth && e.hasSuperuserAuth()))
+  const expand = (record, fields) => {
+    try {
+      $app.expandRecord(record, fields)
+    } catch (_) {}
+    return record
+  }
+  const findByData = (collection, field, value) => {
+    try {
+      return $app.findFirstRecordByData(collection, field, value)
+    } catch (_) {
+      return null
+    }
+  }
+  const findClientForAuth = () => {
+    if (!e.auth) throw new Error('Login obrigatorio.')
+    return (
+      findByData('clients', 'user_id', e.auth.id) ||
+      findByData('clients', 'email', normalizeEmail(e.auth.email()))
+    )
+  }
+  const findConsultantForAuth = () => {
+    if (!e.auth) throw new Error('Login obrigatorio.')
+    return (
+      findByData('consultants', 'user_id', e.auth.id) ||
+      findByData('consultants', 'email', normalizeEmail(e.auth.email()))
+    )
+  }
+  const consultantScopeId = () => {
+    if (isAdmin()) return e.request.url.query().get('consultant_id') || ''
+    const consultant = findConsultantForAuth()
+    if (!consultant) throw new Error('Consultor nao encontrado.')
+    return consultant.id
+  }
+  const getClientMeetings = (clientId) => {
+    try {
+      return $app.findRecordsByFilter('meetings', `client_id = '${clientId}'`, 'start_time', 500, 0)
+    } catch (_) {
+      return []
+    }
+  }
+  const getProgramLimit = (client, program) => {
+    const override = Number(client.get('meeting_limit_override') || 0)
+    if (override > 0) return override
+    return Number(program.get('total_meetings') || 1) + Number(client.get('extra_meetings') || 0)
+  }
+  const getClientStats = (client) => {
+    const program = $app.findRecordById('programs', client.get('program_id'))
+    const meetings = getClientMeetings(client.id).filter(
+      (meeting) => meeting.get('status') !== 'cancelled',
+    )
+    const now = new Date()
+    const completedFromMeetings = meetings.filter((meeting) => {
+      const start = parseDate(meeting.get('start_time'))
+      return meeting.get('status') === 'completed' || (start && start < now)
+    }).length
+    const completedFromStage = Math.max(0, Number(client.get('current_meeting_number') || 1) - 1)
+    const completed = Math.max(completedFromMeetings, completedFromStage)
+    const future = meetings.filter((meeting) => {
+      const start = parseDate(meeting.get('start_time'))
+      return meeting.get('status') === 'scheduled' && start && start > now
+    })
+    const past = meetings.filter((meeting) => {
+      const start = parseDate(meeting.get('start_time'))
+      return start && start <= now
+    })
+    const lastMeeting = past.sort(
+      (a, b) => parseDate(b.get('start_time')) - parseDate(a.get('start_time')),
+    )[0]
+    const upcoming = future.sort(
+      (a, b) => parseDate(a.get('start_time')) - parseDate(b.get('start_time')),
+    )[0]
+    const limit = getProgramLimit(client, program)
+    return {
+      completed_meetings: completed,
+      future_meetings: future.length,
+      max_meetings: limit,
+      next_meeting_number: Math.min(limit + 1, completed + 1),
+      finalised: completed >= limit,
+      last_meeting: lastMeeting
+        ? expand(lastMeeting, ['program_id', 'consultant_id', 'client_id'])
+        : null,
+      upcoming: upcoming ? expand(upcoming, ['program_id', 'consultant_id', 'client_id']) : null,
+      days_since_last_meeting: lastMeeting
+        ? daysBetween(parseDate(lastMeeting.get('start_time')), now)
+        : null,
+    }
+  }
+  const withClientSummary = (client) => {
+    expand(client, ['program_id', 'consultant_id'])
+    const stats = getClientStats(client)
+    return { client, stats }
+  }
+
+  if (route === 'me') {
+    if (!requireAuth()) return forbidden()
+    return e.json(200, { user: e.auth, role: role() })
+  }
+
+  if (route === 'client/me') {
+    if (!requireAuth() || (!isClient() && !isAdmin())) return forbidden()
+    try {
+      const client = findClientForAuth()
+      if (!client) return bad('Cliente nao encontrado.')
+      const summary = withClientSummary(client)
+      return e.json(200, {
+        client: summary.client,
+        stats: summary.stats,
+        upcoming: summary.stats.upcoming,
+        lastMeeting: summary.stats.last_meeting,
+        default_password_hint: DEFAULT_CLIENT_PASSWORD,
+      })
+    } catch (err) {
+      return bad(err.message || 'Erro ao carregar cliente.')
+    }
+  }
+
+  if (route === 'client/meetings') {
+    if (!requireAuth() || (!isClient() && !isAdmin())) return forbidden()
+    try {
+      const client = findClientForAuth()
+      if (!client) return bad('Cliente nao encontrado.')
+      const meetings = getClientMeetings(client.id)
+        .sort((a, b) => parseDate(b.get('start_time')) - parseDate(a.get('start_time')))
+        .map((meeting) => expand(meeting, ['program_id', 'consultant_id', 'client_id']))
+      return e.json(200, { meetings })
+    } catch (err) {
+      return bad(err.message || 'Erro ao carregar reunioes.')
+    }
+  }
+
+  if (route === 'consultant/me') {
+    if (!requireAuth() || (!isConsultant() && !isAdmin())) return forbidden()
+    try {
+      const consultant =
+        isAdmin() && e.request.url.query().get('consultant_id')
+          ? $app.findRecordById('consultants', e.request.url.query().get('consultant_id'))
+          : findConsultantForAuth()
+      if (!consultant) return bad('Consultor nao encontrado.')
+      return e.json(200, { consultant })
+    } catch (err) {
+      return bad(err.message || 'Erro ao carregar consultor.')
+    }
+  }
+
+  if (route === 'consultant/dashboard') {
+    if (!requireAuth() || (!isConsultant() && !isAdmin())) return forbidden()
+    try {
+      const consultantId = consultantScopeId()
+      const now = new Date()
+      const today = pbDate(new Date(now.getFullYear(), now.getMonth(), now.getDate()))
+      const tomorrow = pbDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1))
+      const clientFilter = consultantId ? `consultant_id = '${consultantId}'` : ''
+      const clients = $app.findRecordsByFilter('clients', clientFilter, 'name', 500, 0)
+      const meetingsToday = consultantId
+        ? $app.findRecordsByFilter(
+            'meetings',
+            `consultant_id = '${consultantId}' && status = 'scheduled' && start_time >= '${today}' && start_time < '${tomorrow}'`,
+            'start_time',
+            100,
+            0,
+          )
+        : []
+      const summaries = clients.map((client) => withClientSummary(client))
+      const activeClients = summaries.filter((item) => !item.stats.finalised).length
+      const overdueTally = clients.filter((client) => !client.get('form_answered')).length
+      const finished = summaries.filter((item) => item.stats.finalised).length
+      return e.json(200, {
+        kpis: {
+          total_clients: clients.length,
+          active_clients: activeClients,
+          finished_clients: finished,
+          tally_pending: overdueTally,
+          meetings_today: meetingsToday.length,
+        },
+        meetings_today: meetingsToday.map((meeting) =>
+          expand(meeting, ['client_id', 'program_id', 'consultant_id']),
+        ),
+        clients: summaries.slice(0, 12),
+      })
+    } catch (err) {
+      return bad(err.message || 'Erro no dashboard.')
+    }
+  }
+
+  if (route === 'consultant/clients') {
+    if (!requireAuth() || (!isConsultant() && !isAdmin())) return forbidden()
+    try {
+      const consultantId = consultantScopeId()
+      const filter = consultantId ? `consultant_id = '${consultantId}'` : ''
+      const clients = $app.findRecordsByFilter('clients', filter, 'name', 1000, 0)
+      const rows = clients.map((client) => withClientSummary(client))
+      return e.json(200, { clients: rows })
+    } catch (err) {
+      return bad(err.message || 'Erro ao listar clientes.')
+    }
+  }
+
+  if (route === 'admin/overview') {
+    if (!requireAuth() || !isAdmin()) return forbidden()
+    try {
+      const clients = $app.findRecordsByFilter('clients', '', '', 1000, 0)
+      const consultants = $app.findRecordsByFilter('consultants', '', 'name', 500, 0)
+      const meetings = $app.findRecordsByFilter(
+        'meetings',
+        "status = 'scheduled'",
+        'start_time',
+        500,
+        0,
+      )
+      const connected = consultants.filter(
+        (consultant) => consultant.get('google_sync_status') === 'connected',
+      ).length
+      return e.json(200, {
+        kpis: {
+          clients: clients.length,
+          consultants: consultants.length,
+          scheduled_meetings: meetings.length,
+          connected_calendars: connected,
+        },
+        consultants,
+        upcoming_meetings: meetings
+          .slice(0, 20)
+          .map((meeting) => expand(meeting, ['client_id', 'program_id', 'consultant_id'])),
+      })
+    } catch (err) {
+      return bad(err.message || 'Erro ao carregar admin.')
+    }
+  }
+
+  return notFound()
+})
+
+routerAdd('POST', '/backend/v1/hub/{path...}', (e) => {
+  const route = e.request.pathValue('path')
+  const DEFAULT_CLIENT_PASSWORD = 'AdaptaElite26'
+  const SHEET_ID = '17hsd7jkpRtjKZa6_cXQ4CLSkvjPAVTLVmILebWqDWCs'
+  const TLDV_API_BASE = 'https://pasta.tldv.io/v1alpha1'
+
+  const env = (key) => {
+    try {
+      return $os.getenv(key) || ''
+    } catch (_) {
+      return ''
+    }
+  }
+  const bad = (message) => e.json(400, { error: message, message })
+  const forbidden = () => e.json(403, { error: 'Acesso restrito.', message: 'Acesso restrito.' })
+  const notFound = () =>
+    e.json(404, { error: 'Rota nao encontrada', message: 'Rota nao encontrada' })
+  const normalizeEmail = (email) =>
+    String(email || '')
+      .trim()
+      .toLowerCase()
+  const parseDate = (value) => (value ? new Date(String(value).replace(' ', 'T')) : null)
+  const pbDate = (date) => date.toISOString().replace('T', ' ')
+  const role = () => {
+    if (!e.auth) return ''
+    try {
+      return e.auth.get('role') || ''
+    } catch (_) {
+      return ''
+    }
+  }
+  const isAdmin = () => role() === 'admin' || (e.hasSuperuserAuth && e.hasSuperuserAuth())
+  const isConsultant = () => role() === 'consultant'
+  const requireAuth = () => Boolean(e.auth || (e.hasSuperuserAuth && e.hasSuperuserAuth()))
+  const findByData = (collection, field, value) => {
+    try {
+      return $app.findFirstRecordByData(collection, field, value)
+    } catch (_) {
+      return null
+    }
+  }
+  const findConsultantForAuth = () => {
+    if (!e.auth) return null
+    return (
+      findByData('consultants', 'user_id', e.auth.id) ||
+      findByData('consultants', 'email', normalizeEmail(e.auth.email()))
+    )
+  }
+  const expand = (record, fields) => {
+    try {
+      $app.expandRecord(record, fields)
+    } catch (_) {}
+    return record
+  }
+  const ensureUser = (email, name, userRole, password) => {
+    const normalized = normalizeEmail(email)
+    if (!normalized) return null
+    const users = $app.findCollectionByNameOrId('_pb_users_auth_')
+    let user = null
+    try {
+      user = $app.findAuthRecordByEmail('_pb_users_auth_', normalized)
+    } catch (_) {}
+    if (!user) {
+      user = new Record(users)
+      user.setEmail(normalized)
+      user.setPassword(password || DEFAULT_CLIENT_PASSWORD)
+      user.setVerified(true)
+    }
+    if (name) user.set('name', name)
+    user.set('role', userRole)
+    $app.save(user)
+    return user
+  }
+  const firstRecord = (collection, sort) => {
+    try {
+      return $app.findRecordsByFilter(collection, '', sort || '', 1, 0)[0] || null
+    } catch (_) {
+      return null
+    }
+  }
+  const ensureDefaultProgram = () => {
+    let program = firstRecord('programs', 'name')
+    if (program) return program
+    const collection = $app.findCollectionByNameOrId('programs')
+    program = new Record(collection)
+    program.set('name', 'Elite')
+    program.set('total_meetings', 2)
+    program.set('meeting_duration', 75)
+    program.set('title_template', 'Consultoria Elite - {client_name}')
+    program.set('require_tally', true)
+    program.set('allow_concurrent', false)
+    program.set('max_future_meetings', 1)
+    program.set('min_interval_days', 7)
+    program.set('min_interval_unit', 'days')
+    program.set('min_reschedule_hours', 24)
+    program.set('late_reschedule_delay_days', 7)
+    program.set('booking_window_days', 60)
+    $app.save(program)
+    return program
+  }
+  const ensureDefaultConsultant = () => {
+    let consultant = firstRecord('consultants', 'name')
+    if (consultant) return consultant
+    const collection = $app.findCollectionByNameOrId('consultants')
+    consultant = new Record(collection)
+    consultant.set('name', 'Consultor a definir')
+    consultant.set('email', 'consultor@adapta.org')
+    consultant.set('google_calendar_id', 'primary')
+    consultant.set('working_timezone', 'America/Sao_Paulo')
+    consultant.set('working_hours', {
+      monday: [{ start: '09:00', end: '18:00' }],
+      tuesday: [{ start: '09:00', end: '18:00' }],
+      wednesday: [{ start: '09:00', end: '18:00' }],
+      thursday: [{ start: '09:00', end: '18:00' }],
+      friday: [{ start: '09:00', end: '18:00' }],
+      saturday: [],
+      sunday: [],
+    })
+    $app.save(consultant)
+    return consultant
+  }
+  const externalId = (kind, id) => {
+    if (!id) return null
+    try {
+      return $app.findFirstRecordByFilter(
+        'external_ids',
+        `kind = '${String(kind)}' && external_id = '${String(id).replace(/'/g, "\\'")}'`,
+      )
+    } catch (_) {
+      return null
+    }
+  }
+  const consultantForOwner = (ownerId, fallbackName) => {
+    const mapping = externalId('owner', ownerId)
+    if (mapping && mapping.get('consultant_id')) {
+      try {
+        return $app.findRecordById('consultants', mapping.get('consultant_id'))
+      } catch (_) {}
+    }
+    let consultant = findByData('consultants', 'hubspot_owner_id', ownerId)
+    if (consultant) return consultant
+    if (fallbackName) {
+      try {
+        consultant = $app.findFirstRecordByData('consultants', 'name', fallbackName)
+        if (consultant) return consultant
+      } catch (_) {}
+    }
+    return ensureDefaultConsultant()
+  }
+  const programForStage = (stageId) => {
+    const mapping = externalId('deal_stage', stageId)
+    if (mapping && mapping.get('program_id')) {
+      try {
+        return $app.findRecordById('programs', mapping.get('program_id'))
+      } catch (_) {}
+    }
+    return ensureDefaultProgram()
+  }
+  const parseHubspotDate = (value) => {
+    if (value === undefined || value === null || value === '') return null
+    const raw = String(value).trim()
+    if (!raw) return null
+    if (/^\d+$/.test(raw)) {
+      const numeric = Number(raw)
+      if (!Number.isFinite(numeric) || numeric <= 0) return null
+      return new Date(numeric > 100000000000 ? numeric : numeric * 1000)
+    }
+    const parsed = new Date(raw)
+    return Number.isNaN(parsed.getTime()) ? null : parsed
+  }
+  const parseCsv = (text) => {
+    const rows = []
+    let row = []
+    let cell = ''
+    let quoted = false
+    for (let index = 0; index < text.length; index += 1) {
+      const char = text[index]
+      const next = text[index + 1]
+      if (char === '"') {
+        if (quoted && next === '"') {
+          cell += '"'
+          index += 1
+        } else quoted = !quoted
+      } else if (char === ',' && !quoted) {
+        row.push(cell)
+        cell = ''
+      } else if ((char === '\n' || char === '\r') && !quoted) {
+        if (char === '\r' && next === '\n') index += 1
+        row.push(cell)
+        if (row.some((item) => String(item).trim() !== '')) rows.push(row)
+        row = []
+        cell = ''
+      } else cell += char
+    }
+    row.push(cell)
+    if (row.some((item) => String(item).trim() !== '')) rows.push(row)
+    return rows
+  }
+  const headerKey = (value) => {
+    const text = String(value || '')
+      .trim()
+      .toLowerCase()
+    const replacements = {
+      á: 'a',
+      à: 'a',
+      â: 'a',
+      ã: 'a',
+      ä: 'a',
+      é: 'e',
+      è: 'e',
+      ê: 'e',
+      ë: 'e',
+      í: 'i',
+      ì: 'i',
+      î: 'i',
+      ï: 'i',
+      ó: 'o',
+      ò: 'o',
+      ô: 'o',
+      õ: 'o',
+      ö: 'o',
+      ú: 'u',
+      ù: 'u',
+      û: 'u',
+      ü: 'u',
+      ç: 'c',
+      ª: 'a',
+      º: 'o',
+    }
+    return text.replace(/[áàâãäéèêëíìîïóòôõöúùûüçªº]/g, (char) => replacements[char] || char)
+  }
+  const rowValue = (row, headerMap, names) => {
+    for (let index = 0; index < names.length; index += 1) {
+      const key = headerKey(names[index])
+      const column = headerMap[key]
+      if (column !== undefined) return String(row[column] || '').trim()
+    }
+    return ''
+  }
+  const sheetUrl = () =>
+    env('GOOGLE_SHEETS_CSV_URL') ||
+    `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=0`
+  const writeSyncLog = (source, status, checked, updated, message, payload) => {
+    try {
+      const collection = $app.findCollectionByNameOrId('sync_logs')
+      const record = new Record(collection)
+      record.set('source', source)
+      record.set('status', status)
+      record.set('checked', checked || 0)
+      record.set('updated_count', updated || 0)
+      record.set('message', message || '')
+      record.set('payload', payload || {})
+      $app.save(record)
+    } catch (_) {}
+  }
+  const syncSheetClients = () => {
+    const res = $http.send({ url: sheetUrl(), method: 'GET', timeout: 45 })
+    if (res.statusCode < 200 || res.statusCode >= 300)
+      throw new Error(
+        'Nao foi possivel ler a planilha. Verifique o compartilhamento ou GOOGLE_SHEETS_CSV_URL.',
+      )
+    const rows = parseCsv(res.raw || res.body || String(res.text || ''))
+    if (rows.length < 2) throw new Error('Planilha sem dados para importar.')
+    const headers = rows[0]
+    const headerMap = {}
+    headers.forEach((header, index) => {
+      headerMap[headerKey(header)] = index
+    })
+    let checked = 0
+    let updated = 0
+    const imported = []
+    rows.slice(1).forEach((row, index) => {
+      const email = normalizeEmail(rowValue(row, headerMap, ['Email do contato', 'Email']))
+      if (!email) return
+      checked += 1
+      const dealId = rowValue(row, headerMap, ['Deal ID'])
+      const dealName = rowValue(row, headerMap, ['Nome do negocio', 'Nome do negócio'])
+      const stageId = rowValue(row, headerMap, ['Etapa do negocio', 'Etapa do negócio'])
+      const ownerId = rowValue(row, headerMap, [
+        'Proprietario do negocio',
+        'Proprietário do negócio',
+      ])
+      const firstConsultantKey = rowValue(row, headerMap, [
+        'Especialista Primeira Reuniao',
+        'Especialista Primeira Reunião',
+      ])
+      const secondConsultantKey = rowValue(row, headerMap, [
+        'Especialista Segunda Reuniao',
+        'Especialista Segunda Reunião',
+      ])
+      const name = rowValue(row, headerMap, ['Nome do contato', 'Nome']) || dealName || email
+      const phone = rowValue(row, headerMap, ['Telefone do contato', 'Telefone'])
+      const stageMap = externalId('deal_stage', stageId)
+      const ownerMap = externalId('owner', ownerId)
+      const program = programForStage(stageId)
+      const consultant = consultantForOwner(ownerId, firstConsultantKey || secondConsultantKey)
+      const user = ensureUser(email, name, 'client', DEFAULT_CLIENT_PASSWORD)
+      let client = findByData('clients', 'email', email)
+      if (!client) client = new Record($app.findCollectionByNameOrId('clients'))
+      client.set('email', email)
+      client.set('name', name)
+      client.set('program_id', program.id)
+      client.set('consultant_id', consultant.id)
+      client.set('user_id', user ? user.id : '')
+      client.set('hubspot_deal_id', dealId)
+      client.set('deal_name', dealName)
+      client.set('deal_stage_id', stageId)
+      client.set('deal_stage_name', stageMap ? stageMap.get('name') : stageId)
+      client.set('deal_owner_id', ownerId)
+      client.set('deal_owner_name', ownerMap ? ownerMap.get('name') : ownerId)
+      client.set('contact_phone', phone)
+      const closedAt = parseHubspotDate(rowValue(row, headerMap, ['Data de fechamento']))
+      const firstCallAt = parseHubspotDate(
+        rowValue(row, headerMap, ['Data 1a Call', 'Data 1ª Call']),
+      )
+      const secondCallAt = parseHubspotDate(
+        rowValue(row, headerMap, ['Data 2a Call', 'Data 2ª Call']),
+      )
+      if (closedAt) client.set('closed_at', pbDate(closedAt))
+      if (firstCallAt) client.set('first_call_at', pbDate(firstCallAt))
+      if (secondCallAt) client.set('second_call_at', pbDate(secondCallAt))
+      client.set('first_call_consultant_key', firstConsultantKey)
+      client.set('second_call_consultant_key', secondConsultantKey)
+      client.set('sheet_row_number', index + 2)
+      client.set('sheet_payload', { headers, row })
+      client.set('sheet_synced_at', pbDate(new Date()))
+      if (stageMap && Number(stageMap.get('completed_meetings') || 0) >= 0) {
+        client.set('current_meeting_number', Number(stageMap.get('completed_meetings') || 0) + 1)
+      } else if (!client.get('current_meeting_number')) client.set('current_meeting_number', 1)
+      if (client.get('form_answered') === null || client.get('form_answered') === undefined)
+        client.set('form_answered', false)
+      $app.save(client)
+      updated += 1
+      imported.push({ id: client.id, email, name })
+    })
+    writeSyncLog('google_sheets', 'success', checked, updated, 'Clientes sincronizados.', {
+      url: sheetUrl(),
+      imported: imported.slice(0, 50),
+    })
+    return { checked, updated, imported }
+  }
+  const tldvRequest = (apiKey, path) => {
+    const res = $http.send({
+      url: `${TLDV_API_BASE}${path}`,
+      method: 'GET',
+      headers: { 'x-api-key': apiKey, 'content-type': 'application/json' },
+      timeout: 45,
+    })
+    if (res.statusCode < 200 || res.statusCode >= 300)
+      throw new Error('tl;dv recusou a requisicao.')
+    return res.json || {}
+  }
+  const transcriptToText = (transcript) =>
+    ((transcript || {}).data || [])
+      .map((item) => `${item.speaker || 'Participante'}: ${item.text || ''}`)
+      .join('\n\n')
+  const syncTldvForConsultant = (consultant) => {
+    const apiKey = consultant.get('tldv_api_key') || env('TLDV_API_KEY')
+    if (!apiKey) return { enabled: false, checked: 0, updated: 0 }
+    const meetingsData = tldvRequest(apiKey, '/meetings')
+    const remoteMeetings = meetingsData.results || meetingsData.meetings || []
+    const localMeetings = $app.findRecordsByFilter(
+      'meetings',
+      `consultant_id = '${consultant.id}' && status != 'cancelled'`,
+      '-start_time',
+      200,
+      0,
+    )
+    let updated = 0
+    localMeetings.forEach((meeting) => {
+      if (meeting.get('tldv_meeting_id')) return
+      let client = null
+      try {
+        client = $app.findRecordById('clients', meeting.get('client_id'))
+      } catch (_) {}
+      const email = normalizeEmail(client && client.get('email'))
+      const start = parseDate(meeting.get('start_time'))
+      const match = remoteMeetings.find((remote) => {
+        const happenedAt = parseHubspotDate(
+          remote.happenedAt || remote.createdAt || remote.startedAt,
+        )
+        const invitees = remote.invitees || []
+        const emailMatch = invitees.some((invitee) => normalizeEmail(invitee.email) === email)
+        const titleMatch = String(remote.name || '')
+          .toLowerCase()
+          .includes(String(meeting.get('title') || '').toLowerCase())
+        const timeMatch =
+          start && happenedAt
+            ? Math.abs(happenedAt.getTime() - start.getTime()) < 36 * 60 * 60 * 1000
+            : true
+        return timeMatch && (emailMatch || titleMatch)
+      })
+      if (!match || !match.id) return
+      meeting.set('tldv_meeting_id', match.id)
+      meeting.set('tldv_url', match.url || '')
+      meeting.set('recording_url', match.url || '')
+      try {
+        const transcript = tldvRequest(apiKey, `/meetings/${match.id}/transcript`)
+        meeting.set('tldv_transcript', transcript)
+        meeting.set('tldv_transcript_text', transcriptToText(transcript))
+      } catch (_) {}
+      try {
+        const notes = tldvRequest(apiKey, `/meetings/${match.id}/notes`)
+        meeting.set('tldv_notes', notes)
+        meeting.set('tldv_notes_markdown', notes.markdownContent || '')
+      } catch (_) {}
+      meeting.set('tldv_synced_at', pbDate(new Date()))
+      $app.save(meeting)
+      updated += 1
+    })
+    writeSyncLog('tldv', 'success', remoteMeetings.length, updated, 'tl;dv sincronizado.', {
+      consultant_id: consultant.id,
+    })
+    return { enabled: true, checked: remoteMeetings.length, updated }
+  }
+
+  if (route === 'sheets/sync') {
+    if (!requireAuth() || !isAdmin()) return forbidden()
+    try {
+      return e.json(200, syncSheetClients())
+    } catch (err) {
+      writeSyncLog('google_sheets', 'error', 0, 0, err.message || 'Erro no sync.', {})
+      return bad(err.message || 'Erro ao sincronizar planilha.')
+    }
+  }
+
+  if (route === 'consultants/save') {
+    if (!requireAuth() || !isAdmin()) return forbidden()
+    const body = e.requestInfo().body || {}
+    try {
+      const email = normalizeEmail(body.email)
+      const user = email
+        ? ensureUser(email, body.name, 'consultant', body.password || DEFAULT_CLIENT_PASSWORD)
+        : null
+      let consultant = body.id ? $app.findRecordById('consultants', body.id) : null
+      if (!consultant) consultant = new Record($app.findCollectionByNameOrId('consultants'))
+      ;[
+        'name',
+        'whatsapp_number',
+        'email',
+        'google_calendar_id',
+        'working_timezone',
+        'photo_url',
+        'hubspot_owner_id',
+      ].forEach((field) => {
+        if (body[field] !== undefined) consultant.set(field, body[field])
+      })
+      if (body.working_hours !== undefined) consultant.set('working_hours', body.working_hours)
+      if (user) consultant.set('user_id', user.id)
+      if (!consultant.get('google_calendar_id')) consultant.set('google_calendar_id', 'primary')
+      if (!consultant.get('working_timezone'))
+        consultant.set('working_timezone', 'America/Sao_Paulo')
+      $app.save(consultant)
+      return e.json(200, { consultant, user_id: user ? user.id : consultant.get('user_id') })
+    } catch (err) {
+      return bad(err.message || 'Erro ao salvar consultor.')
+    }
+  }
+
+  if (route === 'consultant/profile') {
+    if (!requireAuth() || (!isConsultant() && !isAdmin())) return forbidden()
+    const body = e.requestInfo().body || {}
+    try {
+      const consultant =
+        isAdmin() && body.consultant_id
+          ? $app.findRecordById('consultants', body.consultant_id)
+          : findConsultantForAuth()
+      if (!consultant) return bad('Consultor nao encontrado.')
+      ;[
+        'name',
+        'whatsapp_number',
+        'email',
+        'photo_url',
+        'tldv_api_key',
+        'working_timezone',
+      ].forEach((field) => {
+        if (body[field] !== undefined) consultant.set(field, body[field])
+      })
+      if (body.working_hours !== undefined) consultant.set('working_hours', body.working_hours)
+      $app.save(consultant)
+      return e.json(200, { consultant })
+    } catch (err) {
+      return bad(err.message || 'Erro ao atualizar perfil.')
+    }
+  }
+
+  if (route === 'consultant/tldv/sync') {
+    if (!requireAuth() || (!isConsultant() && !isAdmin())) return forbidden()
+    const body = e.requestInfo().body || {}
+    try {
+      const consultant =
+        isAdmin() && body.consultant_id
+          ? $app.findRecordById('consultants', body.consultant_id)
+          : findConsultantForAuth()
+      if (!consultant) return bad('Consultor nao encontrado.')
+      return e.json(200, syncTldvForConsultant(consultant))
+    } catch (err) {
+      writeSyncLog('tldv', 'error', 0, 0, err.message || 'Erro no tl;dv.', {})
+      return bad(err.message || 'Erro ao sincronizar tl;dv.')
+    }
+  }
+
+  return notFound()
+})

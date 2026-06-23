@@ -1,13 +1,8 @@
 import { useEffect, useState } from 'react'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
-import {
-  createConsultant,
-  deleteConsultant,
-  getGoogleCalendarStatus,
-  startGoogleOAuth,
-  updateConsultant,
-} from '@/services/api'
+import { deleteConsultant, getGoogleCalendarStatus, startGoogleOAuth } from '@/services/api'
+import { saveConsultantWithUser } from '@/services/hub'
 import {
   Table,
   TableBody,
@@ -94,6 +89,8 @@ function ConsultantForm({ consultant, onSuccess }: { consultant?: any; onSuccess
     whatsapp_number: consultant?.whatsapp_number || '',
     google_calendar_id: consultant?.google_calendar_id || 'primary',
     working_timezone: consultant?.working_timezone || 'America/Sao_Paulo',
+    photo_url: consultant?.photo_url || '',
+    hubspot_owner_id: consultant?.hubspot_owner_id || '',
   })
   const [workingHours, setWorkingHours] = useState<any>(
     normalizeWorkingHours(consultant?.working_hours),
@@ -135,8 +132,7 @@ function ConsultantForm({ consultant, onSuccess }: { consultant?: any; onSuccess
         google_calendar_id: form.google_calendar_id || 'primary',
         working_hours: workingHours,
       }
-      if (consultant?.id) await updateConsultant(consultant.id, payload)
-      else await createConsultant(payload)
+      await saveConsultantWithUser({ id: consultant?.id, ...payload })
       toast.success(consultant?.id ? 'Consultor atualizado.' : 'Consultor criado.')
       onSuccess()
     } catch (_) {
@@ -175,6 +171,22 @@ function ConsultantForm({ consultant, onSuccess }: { consultant?: any; onSuccess
           />
         </div>
         <div className="space-y-2">
+          <Label>ID proprietário HubSpot</Label>
+          <Input
+            value={form.hubspot_owner_id}
+            onChange={(e) => setForm({ ...form, hubspot_owner_id: e.target.value })}
+            placeholder="ID do owner na planilha"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Foto</Label>
+          <Input
+            value={form.photo_url}
+            onChange={(e) => setForm({ ...form, photo_url: e.target.value })}
+            placeholder="https://..."
+          />
+        </div>
+        <div className="space-y-2 sm:col-span-2">
           <Label>Calendário para criar eventos</Label>
           <Input
             value={form.google_calendar_id}
@@ -182,7 +194,8 @@ function ConsultantForm({ consultant, onSuccess }: { consultant?: any; onSuccess
             placeholder="primary ou id@group.calendar.google.com"
           />
           <p className="text-xs text-muted-foreground">
-            A disponibilidade considera os calendários selecionados na conta Google conectada.
+            Ao salvar, o sistema também cria/atualiza a conta do consultor com senha inicial
+            AdaptaElite26.
           </p>
         </div>
       </div>

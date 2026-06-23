@@ -1,95 +1,76 @@
-import { Outlet, Navigate, Link } from 'react-router-dom'
+import { Link, Navigate, Outlet } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
 import {
-  DatabaseZap,
-  LayoutDashboard,
-  Users,
-  CalendarDays,
-  LogOut,
-  UserCog,
-  BriefcaseBusiness,
-} from 'lucide-react'
-import {
-  SidebarProvider,
   Sidebar,
   SidebarContent,
   SidebarGroup,
-  SidebarMenu,
-  SidebarMenuItem,
-  SidebarMenuButton,
   SidebarHeader,
   SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
 } from '@/components/ui/sidebar'
+import { CalendarCheck, LayoutDashboard, LogOut, Settings, Shield, Users } from 'lucide-react'
 
-export function AdminLayout() {
+export function ConsultantLayout() {
   const { user, isAuthenticated, loading, signOut } = useAuth()
+  const role = user?.role
 
   if (loading) return null
   if (!isAuthenticated) return <Navigate to="/login" replace />
-  if (user?.role !== 'admin')
-    return (
-      <Navigate
-        to={user?.role === 'consultant' ? '/consultor/dashboard' : '/cliente/central'}
-        replace
-      />
-    )
+  if (role !== 'consultant' && role !== 'admin') return <Navigate to="/cliente/central" replace />
 
   return (
     <SidebarProvider>
       <Sidebar>
         <SidebarHeader className="p-4 border-b border-border">
-          <h2 className="font-display font-bold text-xl text-primary">Elite Admin</h2>
+          <h2 className="font-display font-bold text-xl text-primary">Elite Hub</h2>
+          <p className="text-xs text-muted-foreground">Visão consultor</p>
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup>
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton asChild>
-                  <Link to="/admin/dashboard">
+                  <Link to="/consultor/dashboard">
                     <LayoutDashboard className="w-4 h-4 mr-2" /> Dashboard
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton asChild>
-                  <Link to="/admin/clientes">
+                  <Link to="/consultor/clientes">
                     <Users className="w-4 h-4 mr-2" /> Clientes
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton asChild>
-                  <Link to="/admin/programas">
-                    <CalendarDays className="w-4 h-4 mr-2" /> Programas
+                  <Link to="/consultor/configuracoes">
+                    <Settings className="w-4 h-4 mr-2" /> Configurações
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild>
-                  <Link to="/admin/consultores">
-                    <UserCog className="w-4 h-4 mr-2" /> Consultores
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild>
-                  <Link to="/admin/ids">
-                    <DatabaseZap className="w-4 h-4 mr-2" /> IDs externos
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild>
-                  <Link to="/consultor/dashboard">
-                    <BriefcaseBusiness className="w-4 h-4 mr-2" /> Visão consultor
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+              {role === 'admin' && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild>
+                    <Link to="/admin/dashboard">
+                      <Shield className="w-4 h-4 mr-2" /> Admin
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroup>
         </SidebarContent>
-        <div className="mt-auto p-4">
+        <div className="mt-auto p-4 space-y-2">
+          <Button variant="outline" className="w-full justify-start" asChild>
+            <Link to="/">
+              <CalendarCheck className="w-4 h-4 mr-2" /> Fluxo de agendamento
+            </Link>
+          </Button>
           <Button
             variant="ghost"
             className="w-full justify-start text-muted-foreground"
@@ -101,7 +82,7 @@ export function AdminLayout() {
       </Sidebar>
       <SidebarInset className="bg-background flex flex-col">
         <header className="h-14 border-b border-border flex items-center px-6">
-          <h1 className="font-display font-medium">Gestão de Consultoria</h1>
+          <h1 className="font-display font-medium">Central da Consultoria Elite</h1>
         </header>
         <main className="flex-1 p-6 overflow-auto">
           <Outlet />
