@@ -68,6 +68,7 @@ export default function ClientStatus() {
   ;['{firstname}', '{first_name}'].forEach((token) => {
     tallyUrl = replaceToken(tallyUrl, token, rawFirstName)
   })
+  tallyUrl = tallyUrl.replace(/%40/gi, '@')
 
   const handleRefresh = async () => {
     setFeedback('')
@@ -147,10 +148,14 @@ export default function ClientStatus() {
               atender com contexto.
             </p>
             <div className="flex flex-col gap-3 pt-2">
-              <Button asChild size="lg" className="w-full text-base" disabled={!tallyUrl}>
-                <a href={tallyUrl || '#'} target="_blank" rel="noreferrer">
-                  Responder formulário <ExternalLink className="w-4 h-4 ml-2" />
-                </a>
+              <Button
+                type="button"
+                size="lg"
+                className="w-full text-base"
+                disabled={!tallyUrl}
+                onClick={() => window.open(tallyUrl, '_blank', 'noopener,noreferrer')}
+              >
+                Responder formulário <ExternalLink className="w-4 h-4 ml-2" />
               </Button>
               <Button variant="outline" onClick={handleRefresh} className="w-full">
                 <RefreshCw className="w-4 h-4 mr-2" /> Já respondi, verificar agora
