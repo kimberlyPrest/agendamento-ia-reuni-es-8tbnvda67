@@ -982,13 +982,28 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
       matched_emails: Object.keys(seenEmails).length,
     }
   }
+  const escapeFilterValue = (value) =>
+    String(value || '')
+      .replace(/\\/g, '\\\\')
+      .replace(/'/g, "\\'")
   const findClientByEmail = (email) => {
     const normalized = normalizeEmail(email)
+    const trimmed = String(email || '').trim()
     try {
       return $app.findFirstRecordByData('clients', 'email', normalized)
-    } catch (_) {
-      return $app.findFirstRecordByData('clients', 'email', email)
-    }
+    } catch (_) {}
+    try {
+      return $app.findFirstRecordByData('clients', 'email', trimmed)
+    } catch (_) {}
+    const records = $app.findRecordsByFilter(
+      'clients',
+      `email = '${escapeFilterValue(normalized)}' || email = '${escapeFilterValue(trimmed)}'`,
+      '',
+      1,
+      0,
+    )
+    if (records.length > 0) return records[0]
+    throw new Error('client_not_found')
   }
   const expandClient = (client) => {
     try {
@@ -1523,17 +1538,15 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
   if (route === 'client/auth') {
     const body = e.requestInfo().body || {}
     if (!body.email) return bad('Email é obrigatório')
+    let client = null
     try {
-      let client = expandClient(findClientByEmail(body.email))
+      client = expandClient(findClientByEmail(body.email))
+    } catch (_) {
+      return e.json(404, { error: 'Email não encontrado', message: 'Email não encontrado' })
+    }
+    try {
       const program = $app.findRecordById('programs', client.get('program_id'))
-      let stats = getClientStats(client, program)
-      if (stats.requires_tally) {
-        try {
-          syncTallyAnsweredClients()
-          client = expandClient($app.findRecordById('clients', client.id))
-          stats = getClientStats(client, program)
-        } catch (_) {}
-      }
+      const stats = getClientStats(client, program)
       const upcoming = getUpcomingMeeting(client.id)
       return e.json(200, {
         client,
@@ -1542,8 +1555,14 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
         lastMeeting: stats.last_meeting,
         stats,
       })
-    } catch (_) {
-      return e.json(404, { error: 'Email não encontrado', message: 'Email não encontrado' })
+    } catch (err) {
+      return e.json(500, {
+        error: 'client_auth_failed',
+        message:
+          'Encontramos seu email, mas não conseguimos carregar os dados da consultoria agora. Tente novamente em alguns instantes.',
+        detail: err && err.message ? err.message : String(err),
+        client_id: client.id,
+      })
     }
   }
 

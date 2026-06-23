@@ -29,8 +29,13 @@ export default function ClientIndex() {
         data.lastMeeting,
       )
       navigate('/status')
-    } catch (_) {
-      setError('Email não encontrado, coloque o email de compra do programa.')
+    } catch (err: any) {
+      const message = String(err?.message || '')
+      setError(
+        message.toLowerCase().includes('email não encontrado')
+          ? 'Email não encontrado, coloque o email de compra do programa.'
+          : message || 'Não foi possível buscar seus dados agora. Tente novamente em instantes.',
+      )
     } finally {
       setLoading(false)
     }
