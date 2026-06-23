@@ -441,6 +441,7 @@ routerAdd('POST', '/backend/v1/hub/{path...}', (e) => {
     if (!normalized) return null
     const users = $app.findCollectionByNameOrId('_pb_users_auth_')
     let user = null
+    let isNewUser = false
     try {
       user = $app.findAuthRecordByEmail('_pb_users_auth_', normalized)
     } catch (_) {}
@@ -449,9 +450,11 @@ routerAdd('POST', '/backend/v1/hub/{path...}', (e) => {
       user.setEmail(normalized)
       user.setPassword(password || DEFAULT_CLIENT_PASSWORD)
       user.setVerified(true)
+      isNewUser = true
     }
     if (name) user.set('name', name)
     user.set('role', userRole)
+    if (userRole === 'consultant' && isNewUser) user.set('must_change_password', true)
     $app.save(user)
     return user
   }
@@ -878,6 +881,36 @@ routerAdd('POST', '/backend/v1/hub/{path...}', (e) => {
       consultant_id: consultant.id,
     })
     return { enabled: true, checked: remoteMeetings.length, updated }
+  }
+
+  if (route === 'auth/change-password') {
+    if (!requireAuth() || !e.auth) return forbidden()
+    const body = e.requestInfo().body || {}
+    const password = String(body.password || '')
+    const confirmation = String(body.password_confirm || body.passwordConfirm || '')
+    if (password.length < 8) return bad('Use uma senha com pelo menos 8 caracteres.')
+    if (password !== confirmation) return bad('A confirmação da senha não confere.')
+    try {
+      const user = $app.findRecordById('_pb_users_auth_', e.auth.id)
+      user.setPassword(password)
+      user.set('must_change_password', false)
+      $app.save(user)
+      return e.json(200, { success: true })
+    } catch (err) {
+      return bad(err.message || 'Não foi possível alterar a senha.')
+    }
+  }
+
+  if (route === 'auth/skip-password-change') {
+    if (!requireAuth() || !e.auth) return forbidden()
+    try {
+      const user = $app.findRecordById('_pb_users_auth_', e.auth.id)
+      user.set('must_change_password', false)
+      $app.save(user)
+      return e.json(200, { success: true })
+    } catch (err) {
+      return bad(err.message || 'Não foi possível pular a troca de senha.')
+    }
   }
 
   if (route === 'sheets/sync') {

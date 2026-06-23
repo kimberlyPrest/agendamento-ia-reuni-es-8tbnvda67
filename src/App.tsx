@@ -25,6 +25,7 @@ import ExternalIds from '@/pages/admin/ExternalIds'
 import ConsultantDashboard from '@/pages/consultant/Dashboard'
 import ConsultantClients from '@/pages/consultant/Clients'
 import ConsultantSettings from '@/pages/consultant/Settings'
+import ConsultantChangePassword from '@/pages/consultant/ChangePassword'
 import ClientCentral from '@/pages/client-portal/Central'
 import ClientMeetings from '@/pages/client-portal/Meetings'
 import NotFound from '@/pages/NotFound'
@@ -62,6 +63,7 @@ const App = () => (
             {/* Consultant Flow */}
             <Route path="/consultor" element={<Navigate to="/consultor/dashboard" replace />} />
             <Route element={<ConsultantLayout />}>
+              <Route path="/consultor/trocar-senha" element={<ConsultantChangePassword />} />
               <Route path="/consultor/dashboard" element={<ConsultantDashboard />} />
               <Route path="/consultor/clientes" element={<ConsultantClients />} />
               <Route path="/consultor/configuracoes" element={<ConsultantSettings />} />

@@ -1,4 +1,4 @@
-import { Link, Navigate, Outlet } from 'react-router-dom'
+import { Link, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
 import {
@@ -16,11 +16,19 @@ import { CalendarCheck, LayoutDashboard, LogOut, Settings, Shield, Users } from 
 
 export function ConsultantLayout() {
   const { user, isAuthenticated, loading, signOut } = useAuth()
+  const location = useLocation()
   const role = user?.role
 
   if (loading) return null
   if (!isAuthenticated) return <Navigate to="/login" replace />
   if (role !== 'consultant' && role !== 'admin') return <Navigate to="/cliente/central" replace />
+  if (
+    role === 'consultant' &&
+    user?.must_change_password &&
+    location.pathname !== '/consultor/trocar-senha'
+  ) {
+    return <Navigate to="/consultor/trocar-senha" replace />
+  }
 
   return (
     <SidebarProvider>

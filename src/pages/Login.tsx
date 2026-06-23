@@ -7,10 +7,12 @@ import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 
-function routeForRole(role?: string) {
-  if (role === 'admin') return '/admin/dashboard'
-  if (role === 'consultant') return '/consultor/dashboard'
-  if (role === 'client') return '/cliente/central'
+function routeForRecord(record?: any) {
+  if (record?.role === 'admin') return '/admin/dashboard'
+  if (record?.role === 'consultant') {
+    return record?.must_change_password ? '/consultor/trocar-senha' : '/consultor/dashboard'
+  }
+  if (record?.role === 'client') return '/cliente/central'
   return '/cliente/central'
 }
 
@@ -32,7 +34,7 @@ export default function Login() {
       setError('Email ou senha inválidos.')
       return
     }
-    navigate(routeForRole(pb.authStore.record?.role), { replace: true })
+    navigate(routeForRecord(pb.authStore.record), { replace: true })
   }
 
   return (

@@ -43,3 +43,10 @@ export const syncTldv = (consultantId?: string) =>
     method: 'POST',
     body: JSON.stringify(consultantId ? { consultant_id: consultantId } : {}),
   })
+export const changePassword = (password: string, passwordConfirm: string) =>
+  hubRequest<any>('/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify({ password, password_confirm: passwordConfirm }),
+  })
+export const skipPasswordChange = () =>
+  hubRequest<any>('/auth/skip-password-change', { method: 'POST' })

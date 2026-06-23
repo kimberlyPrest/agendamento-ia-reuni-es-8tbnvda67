@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-23T17:55:15.153Z",
+  "generatedAt": "2026-06-23T17:59:51.242Z",
   "collections": [
     {
       "name": "users",
@@ -53,6 +53,12 @@
             "client",
             "consultant"
           ]
+        },
+        {
+          "name": "must_change_password",
+          "type": "bool",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [

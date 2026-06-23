@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { getConsultantMe, syncTldv, updateConsultantProfile } from '@/services/hub'
+import { changePassword, getConsultantMe, syncTldv, updateConsultantProfile } from '@/services/hub'
 import { getGoogleCalendarStatus, startGoogleOAuth } from '@/services/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -50,6 +50,8 @@ export default function ConsultantSettings() {
   const [connecting, setConnecting] = useState(false)
   const [testing, setTesting] = useState(false)
   const [syncingTldv, setSyncingTldv] = useState(false)
+  const [passwordForm, setPasswordForm] = useState({ password: '', confirm: '' })
+  const [changingPassword, setChangingPassword] = useState(false)
 
   const load = async () => {
     const data = await getConsultantMe()
@@ -138,6 +140,19 @@ export default function ConsultantSettings() {
     }
   }
 
+  const changeOwnPassword = async () => {
+    setChangingPassword(true)
+    try {
+      await changePassword(passwordForm.password, passwordForm.confirm)
+      setPasswordForm({ password: '', confirm: '' })
+      toast.success('Senha atualizada.')
+    } catch (err: any) {
+      toast.error(err.message || 'Não foi possível alterar a senha.')
+    } finally {
+      setChangingPassword(false)
+    }
+  }
+
   const syncTldvNow = async () => {
     setSyncingTldv(true)
     try {
@@ -221,6 +236,44 @@ export default function ConsultantSettings() {
               placeholder="https://..."
             />
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="bg-card border-border rounded-xl shadow-none">
+        <CardHeader>
+          <CardTitle className="font-display flex items-center gap-2">
+            <KeyRound className="h-5 w-5 text-primary" /> Senha
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
+          <div className="space-y-2">
+            <Label>Nova senha</Label>
+            <Input
+              type="password"
+              minLength={8}
+              value={passwordForm.password}
+              onChange={(e) => setPasswordForm({ ...passwordForm, password: e.target.value })}
+              placeholder="Mínimo 8 caracteres"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Confirmar senha</Label>
+            <Input
+              type="password"
+              minLength={8}
+              value={passwordForm.confirm}
+              onChange={(e) => setPasswordForm({ ...passwordForm, confirm: e.target.value })}
+            />
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={changingPassword || !passwordForm.password || !passwordForm.confirm}
+            onClick={changeOwnPassword}
+          >
+            {changingPassword ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+            Alterar senha
+          </Button>
         </CardContent>
       </Card>
 
