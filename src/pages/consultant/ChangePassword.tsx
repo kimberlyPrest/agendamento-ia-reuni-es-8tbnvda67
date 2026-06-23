@@ -11,9 +11,10 @@ import { toast } from 'sonner'
 import { KeyRound, Loader2 } from 'lucide-react'
 
 async function refreshSession() {
-  try {
-    await pb.collection('users').authRefresh()
-  } catch (_) {}
+  await pb
+    .collection('users')
+    .authRefresh()
+    .catch(() => undefined)
 }
 
 export default function ConsultantChangePassword() {
