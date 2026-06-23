@@ -94,7 +94,9 @@ export default function ConsultantSettings() {
         const googleStatus = await getGoogleCalendarStatus(data.consultant.id)
         setStatus(googleStatus)
         setCalendars(googleStatus.calendars || [])
-      } catch (_) {}
+      } catch (_) {
+        setCalendars([])
+      }
     }
   }
 
