@@ -87,7 +87,7 @@ function ConsultantForm({ consultant, onSuccess }: { consultant?: any; onSuccess
     name: consultant?.name || '',
     email: consultant?.email || '',
     whatsapp_number: consultant?.whatsapp_number || '',
-    google_calendar_id: consultant?.google_calendar_id || 'primary',
+    google_calendar_id: 'primary',
     working_timezone: consultant?.working_timezone || 'America/Sao_Paulo',
     photo_url: consultant?.photo_url || '',
     hubspot_owner_id: consultant?.hubspot_owner_id || '',
@@ -129,7 +129,7 @@ function ConsultantForm({ consultant, onSuccess }: { consultant?: any; onSuccess
         ...form,
         email: form.email.trim().toLowerCase(),
         whatsapp_number: form.whatsapp_number.replace(/\D/g, ''),
-        google_calendar_id: form.google_calendar_id || 'primary',
+        google_calendar_id: 'primary',
         working_hours: workingHours,
       }
       await saveConsultantWithUser({ id: consultant?.id, ...payload })
@@ -187,15 +187,11 @@ function ConsultantForm({ consultant, onSuccess }: { consultant?: any; onSuccess
           />
         </div>
         <div className="space-y-2 sm:col-span-2">
-          <Label>Calendário para criar eventos</Label>
-          <Input
-            value={form.google_calendar_id}
-            onChange={(e) => setForm({ ...form, google_calendar_id: e.target.value })}
-            placeholder="primary ou id@group.calendar.google.com"
-          />
+          <Label>Agenda usada no agendamento</Label>
+          <Input value="primary" disabled />
           <p className="text-xs text-muted-foreground">
-            Ao salvar, o sistema também cria/atualiza a conta do consultor com senha inicial
-            AdaptaElite26.
+            O sistema usa somente a agenda principal do Google Calendar. Ao salvar, também
+            cria/atualiza a conta do consultor com senha inicial AdaptaElite26.
           </p>
         </div>
       </div>
@@ -470,7 +466,7 @@ export default function AdminConsultants() {
                 <TableHead>Nome</TableHead>
                 <TableHead>Email</TableHead>
                 <TableHead>WhatsApp</TableHead>
-                <TableHead>Calendário de criação</TableHead>
+                <TableHead>Agenda usada</TableHead>
                 <TableHead>Status Google</TableHead>
                 <TableHead className="w-[320px] text-right">Ações</TableHead>
               </TableRow>
@@ -495,9 +491,7 @@ export default function AdminConsultants() {
                     <TableCell className="text-muted-foreground">
                       {consultant.whatsapp_number || '-'}
                     </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {consultant.google_calendar_id || 'primary'}
-                    </TableCell>
+                    <TableCell className="text-muted-foreground">primary</TableCell>
                     <TableCell>
                       <div className="space-y-1">
                         <Badge variant={connected ? 'default' : 'destructive'}>{statusLabel}</Badge>

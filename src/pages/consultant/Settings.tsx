@@ -85,7 +85,7 @@ export default function ConsultantSettings() {
       whatsapp_number: data.consultant.whatsapp_number || '',
       photo_url: data.consultant.photo_url || '',
       tldv_api_key: data.consultant.tldv_api_key || '',
-      google_calendar_id: data.consultant.google_calendar_id || 'primary',
+      google_calendar_id: 'primary',
       working_timezone: data.consultant.working_timezone || 'America/Sao_Paulo',
     })
     setWorkingHours(normalizeWorkingHours(data.consultant.working_hours))
@@ -133,6 +133,7 @@ export default function ConsultantSettings() {
           .trim()
           .toLowerCase(),
         whatsapp_number: String(form.whatsapp_number || '').replace(/\D/g, ''),
+        google_calendar_id: 'primary',
         working_hours: workingHours,
       })
       setConsultant(data.consultant)
@@ -402,10 +403,10 @@ export default function ConsultantSettings() {
             <div className="space-y-3 rounded-lg border border-border bg-background/40 p-4">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <Label>Agendas usadas no agendamento</Label>
+                  <Label>Agenda usada no agendamento</Label>
                   <p className="text-xs text-muted-foreground mt-1">
-                    A primeira agenda selecionada cria o evento; todas as selecionadas bloqueiam
-                    conflitos no fluxo do cliente.
+                    O fluxo usa somente a agenda principal. Outras agendas da conta Google não
+                    bloqueiam horários.
                   </p>
                 </div>
                 <Button
@@ -430,45 +431,47 @@ export default function ConsultantSettings() {
                 </p>
               ) : (
                 <div className="space-y-2">
-                  {calendars.map((calendar) => {
-                    const selected = isCalendarSelected(calendar)
-                    const creation = isCreationCalendar(calendar)
-                    return (
-                      <div
-                        key={calendar.id}
-                        className="grid gap-3 rounded-md border border-border bg-secondary p-3 sm:grid-cols-[1fr_auto_auto] sm:items-center"
-                      >
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-white">
-                            {calendar.summary}
-                          </p>
-                          <p className="truncate text-xs text-muted-foreground">
-                            {calendar.primary ? 'Principal' : calendar.id}
-                          </p>
+                  {calendars
+                    .filter((calendar) => calendar.primary)
+                    .map((calendar) => {
+                      const selected = isCalendarSelected(calendar)
+                      const creation = isCreationCalendar(calendar)
+                      return (
+                        <div
+                          key={calendar.id}
+                          className="grid gap-3 rounded-md border border-border bg-secondary p-3 sm:grid-cols-[1fr_auto_auto] sm:items-center"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-white">
+                              {calendar.summary}
+                            </p>
+                            <p className="truncate text-xs text-muted-foreground">
+                              {calendar.primary ? 'Principal' : calendar.id}
+                            </p>
+                          </div>
+                          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 accent-primary"
+                              checked={selected}
+                              onChange={(event) => toggleCalendar(calendar, event.target.checked)}
+                            />
+                            Ver conflitos na primary
+                          </label>
+                          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <input
+                              type="radio"
+                              name="creation_calendar"
+                              className="h-4 w-4 accent-primary"
+                              checked={creation}
+                              onChange={() => chooseCreationCalendar(calendar)}
+                              disabled={!calendar.writable}
+                            />
+                            Criar evento na primary
+                          </label>
                         </div>
-                        <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4 accent-primary"
-                            checked={selected}
-                            onChange={(event) => toggleCalendar(calendar, event.target.checked)}
-                          />
-                          Ver conflitos
-                        </label>
-                        <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <input
-                            type="radio"
-                            name="creation_calendar"
-                            className="h-4 w-4 accent-primary"
-                            checked={creation}
-                            onChange={() => chooseCreationCalendar(calendar)}
-                            disabled={!calendar.writable}
-                          />
-                          Criar evento
-                        </label>
-                      </div>
-                    )
-                  })}
+                      )
+                    })}
                 </div>
               )}
             </div>

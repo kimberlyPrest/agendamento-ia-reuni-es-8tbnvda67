@@ -5,7 +5,7 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
   const GOOGLE_CALENDAR_BASE = 'https://www.googleapis.com/calendar/v3'
   const GOOGLE_USERINFO_URL = 'https://www.googleapis.com/oauth2/v2/userinfo'
   const DAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
-  const DEFAULT_SLOTS = ['09:00', '10:00', '11:00', '14:00', '15:00', '16:00', '17:00']
+  const DEFAULT_WORKING_WINDOWS = [{ start: '09:00', end: '18:00' }]
   const SLOT_STEP_MINUTES = 15
   const BR_OFFSET_MINUTES = -180
   const route = e.request.pathValue('path')
@@ -102,16 +102,8 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
       return true
     })
   }
-  const configuredGoogleCalendarIds = (consultant) => {
-    const raw = consultant.get('google_calendar_id') || 'primary'
-    const ids = String(raw)
-      .split(/[\n,;]+/)
-      .map((item) => item.trim())
-      .filter((item) => item)
-    return ids.length ? ids : ['primary']
-  }
-  const writableGoogleCalendarId = (consultant) =>
-    configuredGoogleCalendarIds(consultant)[0] || 'primary'
+  const configuredGoogleCalendarIds = (_consultant) => ['primary']
+  const writableGoogleCalendarId = (_consultant) => 'primary'
   const hasCalendarListScope = (consultant) => {
     const scopes = ` ${String(consultant.get('google_scopes') || '')} `
     return (
@@ -172,18 +164,7 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
     } while (pageToken && page < 10)
     return calendars
   }
-  const googleBusyCalendarIds = (consultant, accessToken) => {
-    const configured = configuredGoogleCalendarIds(consultant)
-    if (!hasCalendarListScope(consultant)) return configured
-    try {
-      const selected = googleCalendarList(consultant, accessToken)
-        .filter((item) => item.primary || item.selected || item.configured)
-        .map((item) => (item.primary && configured.indexOf('primary') !== -1 ? 'primary' : item.id))
-      return uniqueValues(configured.concat(selected)).slice(0, 50)
-    } catch (_) {
-      return configured
-    }
-  }
+  const googleBusyCalendarIds = (_consultant, _accessToken) => ['primary']
   const signOAuthState = (base) =>
     String($security.hs256(base, env('GOOGLE_CLIENT_SECRET'))).replace('sha256=', '')
   const buildOAuthState = (consultantId) => {
@@ -223,19 +204,21 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
     if (Object.prototype.hasOwnProperty.call(wh, dayKey)) return wh[dayKey]
     if (Object.prototype.hasOwnProperty.call(wh, String(dow))) return wh[String(dow)]
     if (Object.prototype.hasOwnProperty.call(wh, dow)) return wh[dow]
-    return Object.keys(wh).length > 0 ? [] : null
+    return Object.keys(wh).length > 0 ? [] : dow === 0 || dow === 6 ? [] : DEFAULT_WORKING_WINDOWS
   }
-  const normalizeDaySchedule = (raw, duration) => {
+  const normalizeWorkingWindowDefinitions = (raw, duration) => {
     const windows = []
-    const exactTimes = []
     const addRange = (start, end) => {
-      if (minutesFromTime(start) !== null && minutesFromTime(end) !== null)
-        windows.push({ start, end })
+      const startMinutes = minutesFromTime(start)
+      const endMinutes = minutesFromTime(end)
+      if (startMinutes !== null && endMinutes !== null && startMinutes < endMinutes)
+        windows.push({ start: timeFromMinutes(startMinutes), end: timeFromMinutes(endMinutes) })
     }
     const addTime = (time) => {
-      if (minutesFromTime(time) !== null) exactTimes.push(time)
+      const startMinutes = minutesFromTime(time)
+      if (startMinutes !== null)
+        addRange(timeFromMinutes(startMinutes), timeFromMinutes(startMinutes + duration))
     }
-    const useFallbackSlots = raw === null || raw === undefined
     const items = Array.isArray(raw) ? raw : raw ? [raw] : []
     items.forEach((item) => {
       if (!item) return
@@ -250,11 +233,11 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
       const end = item.end || item.to || item.finish
       if (start && end) addRange(start, end)
     })
-    if (useFallbackSlots && windows.length === 0 && exactTimes.length === 0)
-      DEFAULT_SLOTS.forEach(addTime)
+    return windows
+  }
+  const normalizeDaySchedule = (raw, duration) => {
     const slots = []
-    exactTimes.forEach((time) => slots.push(time))
-    windows.forEach((window) => {
+    normalizeWorkingWindowDefinitions(raw, duration).forEach((window) => {
       const start = minutesFromTime(window.start)
       const end = minutesFromTime(window.end)
       if (start === null || end === null) return
@@ -263,6 +246,17 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
     })
     return Array.from(new Set(slots)).sort()
   }
+  const workingWindowsForDate = (consultant, program, dateStr) => {
+    const duration = numberValue(program, 'meeting_duration', 60)
+    return normalizeWorkingWindowDefinitions(getRawDaySchedule(consultant, dateStr), duration).map(
+      (window) => ({
+        start: localDateTime(dateStr, window.start),
+        end: localDateTime(dateStr, window.end),
+      }),
+    )
+  }
+  const isInsideWorkingWindow = (start, end, windows) =>
+    windows.some((window) => start >= window.start && end <= window.end)
   const getLocalBusyIntervals = (consultantId, dateStr, ignoreMeetingId) => {
     const bounds = localDayBounds(dateStr)
     const startOfDay = pbDate(bounds.start)
@@ -380,36 +374,69 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
     const bufferBefore = numberValue(program, 'buffer_before_minutes', 0)
     const bufferAfter = numberValue(program, 'buffer_after_minutes', 0)
     const rawSchedule = getRawDaySchedule(consultant, dateStr)
-    const times = normalizeDaySchedule(rawSchedule, duration)
     const now = new Date()
     const bounds = localDayBounds(dateStr)
     const localBusy = getLocalBusyIntervals(consultant.id, dateStr, ignoreMeetingId)
     const googleBusy = googleConnected(consultant)
       ? googleFreeBusy(consultant, bounds.start, bounds.end)
       : []
-    const busyIntervals = localBusy.concat(googleBusy)
-    const evaluated = times.map((time) => {
-      const start = localDateTime(dateStr, time)
+    const busyIntervals = localBusy.concat(googleBusy).sort((a, b) => a.start - b.start)
+    const workingWindows = workingWindowsForDate(consultant, program, dateStr)
+    let freeIntervals = []
+
+    workingWindows.forEach((window) => {
+      let intervals = [window]
+      busyIntervals.forEach((busy) => {
+        const busyStart = addMinutes(busy.start, -bufferBefore)
+        const busyEnd = addMinutes(busy.end, bufferAfter)
+        intervals = intervals
+          .flatMap((interval) => {
+            if (!intervalsOverlap(interval.start, interval.end, busyStart, busyEnd))
+              return [interval]
+            const next = []
+            if (interval.start < busyStart)
+              next.push({ start: interval.start, end: new Date(Math.min(busyStart, interval.end)) })
+            if (busyEnd < interval.end)
+              next.push({ start: new Date(Math.max(busyEnd, interval.start)), end: interval.end })
+            return next
+          })
+          .filter((interval) => interval.start < interval.end)
+      })
+      freeIntervals = freeIntervals.concat(intervals)
+    })
+
+    const stepMs = SLOT_STEP_MINUTES * 60000
+    const seen = {}
+    const evaluated = []
+    const addCandidate = (start, interval) => {
       const end = addMinutes(start, duration)
-      const blockers = busyIntervals.filter((busy) =>
-        intervalsOverlap(
-          addMinutes(start, -bufferBefore),
-          addMinutes(end, bufferAfter),
-          busy.start,
-          busy.end,
-        ),
-      )
-      return {
-        time,
+      const key = start.toISOString()
+      if (seen[key] || start <= now || end > interval.end) return
+      seen[key] = true
+      evaluated.push({
+        time: addMinutes(start, BR_OFFSET_MINUTES).toISOString().slice(11, 16),
         start_time: start.toISOString(),
         end_time: end.toISOString(),
-        available: start > now && blockers.length === 0,
-        reason: start <= now ? 'past' : blockers.length > 0 ? 'busy' : '',
-        blockers,
+        available: true,
+        reason: '',
+        blockers: [],
+      })
+    }
+
+    freeIntervals.forEach((interval) => {
+      if (addMinutes(interval.start, duration) > interval.end) return
+      addCandidate(interval.start, interval)
+      let cursor = new Date(
+        Math.ceil(Math.max(interval.start.getTime(), now.getTime() + 60000) / stepMs) * stepMs,
+      )
+      while (addMinutes(cursor, duration) <= interval.end) {
+        addCandidate(cursor, interval)
+        cursor = new Date(cursor.getTime() + stepMs)
       }
     })
+
     const slots = evaluated
-      .filter((slot) => slot.available)
+      .sort((a, b) => parseDate(a.start_time) - parseDate(b.start_time))
       .map((slot) => ({
         time: slot.time,
         start_time: slot.start_time,
@@ -425,17 +452,12 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
         buffer_before_minutes: bufferBefore,
         buffer_after_minutes: bufferAfter,
         raw_schedule: rawSchedule,
-        candidate_times: times,
+        working_windows: workingWindows.map(serializeInterval),
+        free_intervals: freeIntervals.map(serializeInterval),
+        candidate_times: slots.map((slot) => slot.time),
         local_busy: localBusy.map(serializeInterval),
         google_busy: googleBusy.map(serializeInterval),
-        rejected_slots: evaluated
-          .filter((slot) => !slot.available)
-          .slice(0, 200)
-          .map((slot) => ({
-            time: slot.time,
-            reason: slot.reason,
-            blockers: slot.blockers.map(serializeInterval),
-          })),
+        rejected_slots: [],
         available_count: slots.length,
       },
     }
@@ -748,7 +770,7 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
   const TALLY_API_BASE = 'https://api.tally.so'
   const DEFAULT_TALLY_FORM_ID = 'wdRX0N'
   const DAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
-  const DEFAULT_SLOTS = ['09:00', '10:00', '11:00', '14:00', '15:00', '16:00', '17:00']
+  const DEFAULT_WORKING_WINDOWS = [{ start: '09:00', end: '18:00' }]
   const SLOT_STEP_MINUTES = 15
   const BR_OFFSET_MINUTES = -180
   const route = e.request.pathValue('path')
@@ -845,16 +867,8 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
       return true
     })
   }
-  const configuredGoogleCalendarIds = (consultant) => {
-    const raw = consultant.get('google_calendar_id') || 'primary'
-    const ids = String(raw)
-      .split(/[\n,;]+/)
-      .map((item) => item.trim())
-      .filter((item) => item)
-    return ids.length ? ids : ['primary']
-  }
-  const writableGoogleCalendarId = (consultant) =>
-    configuredGoogleCalendarIds(consultant)[0] || 'primary'
+  const configuredGoogleCalendarIds = (_consultant) => ['primary']
+  const writableGoogleCalendarId = (_consultant) => 'primary'
   const hasCalendarListScope = (consultant) => {
     const scopes = ` ${String(consultant.get('google_scopes') || '')} `
     return (
@@ -863,32 +877,7 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
       scopes.includes('https://www.googleapis.com/auth/calendar.calendarlist')
     )
   }
-  const googleBusyCalendarIds = (consultant, accessToken) => {
-    const configured = configuredGoogleCalendarIds(consultant)
-    if (!hasCalendarListScope(consultant)) return configured
-    try {
-      const res = $http.send({
-        url: `${GOOGLE_CALENDAR_BASE}/users/me/calendarList?minAccessRole=freeBusyReader&showDeleted=false&showHidden=false&maxResults=250`,
-        method: 'GET',
-        headers: { authorization: `Bearer ${accessToken}` },
-        timeout: 30,
-      })
-      if (res.statusCode < 200 || res.statusCode >= 300) return configured
-      const selected = ((res.json || {}).items || [])
-        .filter((item) =>
-          Boolean(
-            item &&
-            item.id &&
-            !item.deleted &&
-            (item.primary || item.selected || configured.indexOf(item.id) !== -1),
-          ),
-        )
-        .map((item) => (item.primary && configured.indexOf('primary') !== -1 ? 'primary' : item.id))
-      return uniqueValues(configured.concat(selected)).slice(0, 50)
-    } catch (_) {
-      return configured
-    }
-  }
+  const googleBusyCalendarIds = (_consultant, _accessToken) => ['primary']
   const tallyApiReady = () => Boolean(env('TALLY_API_KEY'))
   const tallyFormId = () => env('TALLY_FORM_ID') || DEFAULT_TALLY_FORM_ID
   const normalizeTallyKey = (key) =>
@@ -1234,19 +1223,21 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
     if (Object.prototype.hasOwnProperty.call(wh, dayKey)) return wh[dayKey]
     if (Object.prototype.hasOwnProperty.call(wh, String(dow))) return wh[String(dow)]
     if (Object.prototype.hasOwnProperty.call(wh, dow)) return wh[dow]
-    return Object.keys(wh).length > 0 ? [] : null
+    return Object.keys(wh).length > 0 ? [] : dow === 0 || dow === 6 ? [] : DEFAULT_WORKING_WINDOWS
   }
-  const normalizeDaySchedule = (raw, duration) => {
+  const normalizeWorkingWindowDefinitions = (raw, duration) => {
     const windows = []
-    const exactTimes = []
     const addRange = (start, end) => {
-      if (minutesFromTime(start) !== null && minutesFromTime(end) !== null)
-        windows.push({ start, end })
+      const startMinutes = minutesFromTime(start)
+      const endMinutes = minutesFromTime(end)
+      if (startMinutes !== null && endMinutes !== null && startMinutes < endMinutes)
+        windows.push({ start: timeFromMinutes(startMinutes), end: timeFromMinutes(endMinutes) })
     }
     const addTime = (time) => {
-      if (minutesFromTime(time) !== null) exactTimes.push(time)
+      const startMinutes = minutesFromTime(time)
+      if (startMinutes !== null)
+        addRange(timeFromMinutes(startMinutes), timeFromMinutes(startMinutes + duration))
     }
-    const useFallbackSlots = raw === null || raw === undefined
     const items = Array.isArray(raw) ? raw : raw ? [raw] : []
     items.forEach((item) => {
       if (!item) return
@@ -1261,11 +1252,11 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
       const end = item.end || item.to || item.finish
       if (start && end) addRange(start, end)
     })
-    if (useFallbackSlots && windows.length === 0 && exactTimes.length === 0)
-      DEFAULT_SLOTS.forEach(addTime)
+    return windows
+  }
+  const normalizeDaySchedule = (raw, duration) => {
     const slots = []
-    exactTimes.forEach((time) => slots.push(time))
-    windows.forEach((window) => {
+    normalizeWorkingWindowDefinitions(raw, duration).forEach((window) => {
       const start = minutesFromTime(window.start)
       const end = minutesFromTime(window.end)
       if (start === null || end === null) return
@@ -1274,15 +1265,22 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
     })
     return Array.from(new Set(slots)).sort()
   }
+  const workingWindowsForDate = (consultant, program, dateStr) => {
+    const duration = numberValue(program, 'meeting_duration', 60)
+    return normalizeWorkingWindowDefinitions(getRawDaySchedule(consultant, dateStr), duration).map(
+      (window) => ({
+        start: localDateTime(dateStr, window.start),
+        end: localDateTime(dateStr, window.end),
+      }),
+    )
+  }
+  const isInsideWorkingWindow = (start, end, windows) =>
+    windows.some((window) => start >= window.start && end <= window.end)
   const isWithinWorkingSchedule = (consultant, program, start, end) => {
     const duration = numberValue(program, 'meeting_duration', 60)
     if (Math.abs(addMinutes(start, duration).getTime() - end.getTime()) > 60000) return false
     const dateStr = brDateString(start)
-    const startTime = timeFromMinutes(minutesInBrDay(start))
-    return (
-      normalizeDaySchedule(getRawDaySchedule(consultant, dateStr), duration).indexOf(startTime) !==
-      -1
-    )
+    return isInsideWorkingWindow(start, end, workingWindowsForDate(consultant, program, dateStr))
   }
   const getLocalBusyIntervals = (consultantId, dateStr, ignoreMeetingId) => {
     const bounds = localDayBounds(dateStr)

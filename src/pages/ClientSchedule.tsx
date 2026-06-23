@@ -191,8 +191,8 @@ export default function ClientSchedule() {
             <div>
               <p className="text-sm font-medium text-white">Agenda Google sincronizada</p>
               <p className="text-xs text-muted-foreground">
-                Os horários abaixo respeitam a janela de atendimento e conflitos encontrados em{' '}
-                {calendarContext.calendar_source_count || 1} agenda(s) do consultor.
+                Os horários abaixo respeitam a janela de atendimento e os conflitos encontrados na
+                agenda principal do consultor.
               </p>
             </div>
           </div>
