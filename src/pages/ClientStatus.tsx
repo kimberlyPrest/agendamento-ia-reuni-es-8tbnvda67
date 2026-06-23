@@ -49,21 +49,24 @@ export default function ClientStatus() {
   const noShowEarliestDate = stats?.no_show_earliest_start
     ? new Date(stats.no_show_earliest_start)
     : null
-  const tallyTemplate = program?.tally_form_template || program?.tally_form_url || ''
+  const tallyTemplate =
+    program?.tally_form_template ||
+    program?.tally_form_url ||
+    'https://tally.so/r/wdRX0N?email={clients_email}&firstname={firstname}'
   const replaceToken = (value: string, token: string, replacement: string) =>
     value.split(token).join(replacement)
-  let tallyUrl = tallyTemplate
-  const encodedEmail = encodeURIComponent(client.email || '')
-  const encodedName = encodeURIComponent(client.name || '')
-  const encodedFirstName = encodeURIComponent(firstName || '')
+  let tallyUrl = tallyTemplate.split('firstname={clients_name}').join('firstname={firstname}')
+  const rawEmail = String(client.email || '').trim()
+  const rawName = String(client.name || '').trim()
+  const rawFirstName = String(firstName || '').trim()
   ;['{clients_email}', '{client_email}', '{email}'].forEach((token) => {
-    tallyUrl = replaceToken(tallyUrl, token, encodedEmail)
+    tallyUrl = replaceToken(tallyUrl, token, rawEmail)
   })
   ;['{clients_name}', '{client_name}'].forEach((token) => {
-    tallyUrl = replaceToken(tallyUrl, token, encodedName)
+    tallyUrl = replaceToken(tallyUrl, token, rawName)
   })
   ;['{firstname}', '{first_name}'].forEach((token) => {
-    tallyUrl = replaceToken(tallyUrl, token, encodedFirstName)
+    tallyUrl = replaceToken(tallyUrl, token, rawFirstName)
   })
 
   const handleRefresh = async () => {
