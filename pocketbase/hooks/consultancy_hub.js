@@ -151,10 +151,7 @@ routerAdd('GET', '/backend/v1/hub/{path...}', (e) => {
     let finalisedByStage = false
     if (stageText) completed = 0
     if (hasRefund) completed = number > 0 ? Math.max(0, number - 1) : completed
-    else if (hasNoShow && number > 0)
-      completed = boolValue(program, 'no_show_counts_as_meeting', false)
-        ? number
-        : Math.max(0, number - 1)
+    else if (hasNoShow && number > 0) completed = Math.max(0, number - 1)
     else if (hasFinalized && number > 0) completed = number
     else if (hasFinalized && number === 0) {
       completed = limit
@@ -202,6 +199,22 @@ routerAdd('GET', '/backend/v1/hub/{path...}', (e) => {
     const limit = getProgramLimit(client, program)
     const stageRules = classifyClientStage(client, program)
     const completed = stageRules.completed_meetings
+    let noShowEarliestStart = null
+    if (stageRules.has_no_show) {
+      const callDateField =
+        stageRules.stage_meeting_number === 1
+          ? 'first_call_at'
+          : stageRules.stage_meeting_number === 2
+            ? 'second_call_at'
+            : ''
+      const baseDate =
+        (callDateField ? parseDate(client.get(callDateField)) : null) ||
+        (lastMeeting ? parseDate(lastMeeting.get('start_time')) : null)
+      const delayDays = Number(program.get('late_reschedule_delay_days') || 7)
+      noShowEarliestStart = baseDate
+        ? new Date(baseDate.getTime() + delayDays * 24 * 60 * 60 * 1000)
+        : new Date(now.getTime() + delayDays * 24 * 60 * 60 * 1000)
+    }
     return {
       completed_meetings: completed,
       future_meetings: future.length,
@@ -211,6 +224,7 @@ routerAdd('GET', '/backend/v1/hub/{path...}', (e) => {
       booking_blocked: stageRules.booking_blocked,
       block_reason: stageRules.block_reason,
       requires_tally: stageRules.requires_tally,
+      no_show_earliest_start: noShowEarliestStart ? noShowEarliestStart.toISOString() : '',
       stage_rules: stageRules,
       last_meeting: lastMeeting
         ? expand(lastMeeting, ['program_id', 'consultant_id', 'client_id'])
@@ -598,10 +612,7 @@ routerAdd('POST', '/backend/v1/hub/{path...}', (e) => {
     let completed = Math.max(0, Number(currentMeetingNumber || 1) - 1)
     if (stageText) completed = 0
     if (hasRefund) completed = number > 0 ? Math.max(0, number - 1) : completed
-    else if (hasNoShow && number > 0)
-      completed = boolValue(program, 'no_show_counts_as_meeting', false)
-        ? number
-        : Math.max(0, number - 1)
+    else if (hasNoShow && number > 0) completed = Math.max(0, number - 1)
     else if (hasFinalized && number > 0) completed = number
     else if (hasFinalized && number === 0) completed = limit
     else if (hasPending && number > 0) completed = Math.max(0, number - 1)

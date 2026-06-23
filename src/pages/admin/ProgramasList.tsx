@@ -97,7 +97,6 @@ export default function ProgramasList() {
               <TableHead>Tally</TableHead>
               <TableHead>Intervalo</TableHead>
               <TableHead>Remarcação</TableHead>
-              <TableHead>No-show</TableHead>
               <TableHead className="w-[120px] text-right">Ações</TableHead>
             </TableRow>
           </TableHeader>
@@ -127,11 +126,6 @@ export default function ProgramasList() {
                   </span>
                 </TableCell>
                 <TableCell>
-                  <Badge variant={p.no_show_counts_as_meeting ? 'destructive' : 'secondary'}>
-                    {p.no_show_counts_as_meeting ? 'Consome saldo' : 'Não consome'}
-                  </Badge>
-                </TableCell>
-                <TableCell>
                   <div className="flex justify-end gap-2">
                     <Button
                       size="icon"
@@ -157,7 +151,7 @@ export default function ProgramasList() {
             ))}
             {programs.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                   Nenhum programa cadastrado.
                 </TableCell>
               </TableRow>

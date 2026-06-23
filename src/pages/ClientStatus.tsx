@@ -46,6 +46,9 @@ export default function ClientStatus() {
     lateRescheduleDelayDays > 0
       ? `a partir de ${lateRescheduleDelayDays} ${lateRescheduleUnit}`
       : 'imediatamente'
+  const noShowEarliestDate = stats?.no_show_earliest_start
+    ? new Date(stats.no_show_earliest_start)
+    : null
   const tallyTemplate = program?.tally_form_template || program?.tally_form_url || ''
   const replaceToken = (value: string, token: string, replacement: string) =>
     value.split(token).join(replacement)
@@ -303,6 +306,17 @@ export default function ClientStatus() {
           novo horário depende da agenda do consultor e pode entrar no fim da fila.
         </CardContent>
       </Card>
+
+      {stats?.stage_rules?.has_no_show &&
+        noShowEarliestDate &&
+        !Number.isNaN(noShowEarliestDate.getTime()) && (
+          <Card className="bg-[#FFB800]/10 border-[#FFB800]/20 shadow-none">
+            <CardContent className="p-4 text-sm text-[#FFB800]">
+              No-show registrado: essa reunião não consumiu saldo. Você pode reagendar a partir de{' '}
+              {format(noShowEarliestDate, "dd 'de' MMMM", { locale: ptBR })}.
+            </CardContent>
+          </Card>
+        )}
 
       <Button size="lg" className="w-full text-lg h-14" onClick={() => navigate('/schedule')}>
         Agendar agora <ArrowRight className="w-5 h-5 ml-2" />

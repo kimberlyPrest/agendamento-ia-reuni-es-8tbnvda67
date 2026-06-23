@@ -965,10 +965,7 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
     let finalisedByStage = false
     if (stageText) completed = 0
     if (hasRefund) completed = number > 0 ? Math.max(0, number - 1) : completed
-    else if (hasNoShow && number > 0)
-      completed = boolValue(program, 'no_show_counts_as_meeting', false)
-        ? number
-        : Math.max(0, number - 1)
+    else if (hasNoShow && number > 0) completed = Math.max(0, number - 1)
     else if (hasFinalized && number > 0) completed = number
     else if (hasFinalized && number === 0) {
       completed = limit
@@ -1013,6 +1010,22 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
     const stageRules = classifyClientStage(client, program)
     const completedCount = stageRules.completed_meetings
     const nextMeetingNumber = Math.min(limit + 1, completedCount + 1)
+    let noShowEarliestStart = null
+    if (stageRules.has_no_show) {
+      const callDateField =
+        stageRules.stage_meeting_number === 1
+          ? 'first_call_at'
+          : stageRules.stage_meeting_number === 2
+            ? 'second_call_at'
+            : ''
+      const baseDate =
+        (callDateField ? parseDate(client.get(callDateField)) : null) ||
+        (lastMeeting ? recordTime(lastMeeting, 'start_time') : null)
+      const delayDays = nonNegativeNumberValue(program, 'late_reschedule_delay_days', 7)
+      noShowEarliestStart = baseDate
+        ? addMinutes(baseDate, delayDays * 24 * 60)
+        : addMinutes(now, delayDays * 24 * 60)
+    }
     return {
       completed_meetings: completedCount,
       future_meetings: future.length,
@@ -1022,6 +1035,7 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
       booking_blocked: stageRules.booking_blocked,
       block_reason: stageRules.block_reason,
       requires_tally: stageRules.requires_tally,
+      no_show_earliest_start: noShowEarliestStart ? noShowEarliestStart.toISOString() : '',
       stage_rules: stageRules,
       last_meeting: lastMeeting ? expandMeeting(lastMeeting) : null,
       upcoming: upcoming ? expandMeeting(upcoming) : null,
@@ -1218,6 +1232,8 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
     const stats = getClientStats(client, program)
     if (stats.booking_blocked) return stats.block_reason
     if (stats.requires_tally) return 'Antes de agendar, responda o formulário preparatório.'
+    if (stats.no_show_earliest_start && start < parseDate(stats.no_show_earliest_start))
+      return `Após no-show, escolha um novo horário a partir de ${nonNegativeNumberValue(program, 'late_reschedule_delay_days', 7)} dias da reunião original.`
     const futureLimit = boolValue(program, 'allow_concurrent', false)
       ? numberValue(program, 'max_future_meetings', 1)
       : 1

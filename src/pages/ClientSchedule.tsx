@@ -29,6 +29,9 @@ export default function ClientSchedule() {
   const lateRescheduleUnit = lateRescheduleDelayDays === 1 ? 'dia' : 'dias'
   const existingMeetingDate =
     isRescheduling && upcomingMeeting?.start_time ? new Date(upcomingMeeting.start_time) : null
+  const noShowEarliestDate = stats?.no_show_earliest_start
+    ? new Date(stats.no_show_earliest_start)
+    : null
   const isLateReschedule = existingMeetingDate
     ? differenceInHours(existingMeetingDate, new Date()) < minRescheduleHours
     : false
@@ -36,6 +39,11 @@ export default function ClientSchedule() {
   today.setHours(0, 0, 0, 0)
   const minDate = new Date(today)
   if (isLateReschedule) minDate.setDate(minDate.getDate() + lateRescheduleDelayDays)
+  if (!isLateReschedule && noShowEarliestDate && !Number.isNaN(noShowEarliestDate.getTime())) {
+    const noShowDay = new Date(noShowEarliestDate)
+    noShowDay.setHours(0, 0, 0, 0)
+    if (noShowDay > minDate) minDate.setTime(noShowDay.getTime())
+  }
   const minDateTime = minDate.getTime()
   const initialDate = isLateReschedule
     ? minDate
@@ -78,7 +86,7 @@ export default function ClientSchedule() {
         client.id,
         rescheduleId || undefined,
       )
-      const nextSlots = (data.slots || []).map((slot: Slot | string) => {
+      let nextSlots = (data.slots || []).map((slot: Slot | string) => {
         if (typeof slot !== 'string') return slot
         return {
           time: slot,
@@ -86,6 +94,11 @@ export default function ClientSchedule() {
           end_time: `${dateStr}T${slot}:00`,
         }
       })
+      if (noShowEarliestDate && !Number.isNaN(noShowEarliestDate.getTime())) {
+        nextSlots = nextSlots.filter(
+          (slot: Slot) => new Date(slot.start_time) >= noShowEarliestDate,
+        )
+      }
       setSlots(nextSlots)
       if (data.setup_required) setError(data.message || 'Agenda Google ainda não conectada.')
     } catch (err: any) {

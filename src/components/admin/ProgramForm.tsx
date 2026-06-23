@@ -52,7 +52,6 @@ const programSchema = z.object({
   min_interval_unit: z.enum(['days', 'weeks', 'months']).default('days'),
   min_reschedule_hours: z.coerce.number().min(0).default(24),
   late_reschedule_delay_days: z.coerce.number().min(0).default(7),
-  no_show_counts_as_meeting: z.boolean().default(false),
   booking_window_days: z.coerce.number().min(1).default(60),
   buffer_before_minutes: z.coerce.number().min(0).default(0),
   buffer_after_minutes: z.coerce.number().min(0).default(0),
@@ -82,7 +81,6 @@ export function ProgramForm({ program, onSuccess }: ProgramFormProps) {
       min_interval_unit: program?.min_interval_unit || 'days',
       min_reschedule_hours: program?.min_reschedule_hours ?? 24,
       late_reschedule_delay_days: program?.late_reschedule_delay_days ?? 7,
-      no_show_counts_as_meeting: program?.no_show_counts_as_meeting ?? false,
       booking_window_days: program?.booking_window_days || 60,
       buffer_before_minutes: program?.buffer_before_minutes || 0,
       buffer_after_minutes: program?.buffer_after_minutes || 0,
@@ -390,27 +388,6 @@ export function ProgramForm({ program, onSuccess }: ProgramFormProps) {
             )}
           />
         </div>
-
-        <FormField
-          control={form.control}
-          name="no_show_counts_as_meeting"
-          render={({ field }) => (
-            <FormItem className="flex items-center justify-between rounded-lg border border-border bg-secondary px-3 py-3">
-              <div className="space-y-1">
-                <FormLabel className="text-sm font-normal">
-                  No-show consome saldo de reunião
-                </FormLabel>
-                <p className="text-xs text-muted-foreground">
-                  Se ativado, uma etapa “2ª Reunião No Show” conta como 2 reuniões usadas. Se
-                  desligado, conta como 1.
-                </p>
-              </div>
-              <FormControl>
-                <Switch checked={field.value} onCheckedChange={field.onChange} />
-              </FormControl>
-            </FormItem>
-          )}
-        />
 
         <FormField
           control={form.control}

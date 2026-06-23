@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-23T17:49:24.845Z",
+  "generatedAt": "2026-06-23T17:55:15.153Z",
   "collections": [
     {
       "name": "users",
@@ -189,12 +189,6 @@
         {
           "name": "confirmation_message",
           "type": "text",
-          "required": false,
-          "system": false
-        },
-        {
-          "name": "no_show_counts_as_meeting",
-          "type": "bool",
           "required": false,
           "system": false
         }
