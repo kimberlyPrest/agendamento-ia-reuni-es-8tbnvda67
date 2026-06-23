@@ -891,6 +891,28 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
   }
   const tallyApiReady = () => Boolean(env('TALLY_API_KEY'))
   const tallyFormId = () => env('TALLY_FORM_ID') || DEFAULT_TALLY_FORM_ID
+  const normalizeTallyKey = (key) =>
+    String(key || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '')
+  const isTallyEmailKey = (key) => normalizeTallyKey(key).includes('email')
+  const hiddenEmailValue = (hiddenFields) => {
+    if (!hiddenFields) return ''
+    if (Array.isArray(hiddenFields)) {
+      const field = hiddenFields.find((item) =>
+        isTallyEmailKey(item && (item.key || item.name || item.label || item.id)),
+      )
+      return field ? field.value : ''
+    }
+    const direct =
+      hiddenFields['e-mail'] ||
+      hiddenFields.email ||
+      hiddenFields.client_email ||
+      hiddenFields.clients_email
+    if (direct) return direct
+    const key = Object.keys(hiddenFields).find((item) => isTallyEmailKey(item))
+    return key ? hiddenFields[key] : ''
+  }
   const collectEmailCandidates = (value, emails) => {
     if (value === undefined || value === null) return
     if (Array.isArray(value)) {
@@ -1733,22 +1755,7 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
 
     const fields = Array.isArray(data.fields) ? data.fields : []
     let email = normalizeEmail(data.respondentEmail || data.email || body.respondentEmail || '')
-    if (!email && data.hiddenFields) {
-      if (Array.isArray(data.hiddenFields)) {
-        const hiddenEmail = data.hiddenFields.find((field) =>
-          String(field.key || field.name || field.label || '')
-            .toLowerCase()
-            .includes('email'),
-        )
-        email = normalizeEmail(hiddenEmail && hiddenEmail.value)
-      } else {
-        email = normalizeEmail(
-          data.hiddenFields.email ||
-            data.hiddenFields.client_email ||
-            data.hiddenFields.clients_email,
-        )
-      }
-    }
+    if (!email && data.hiddenFields) email = normalizeEmail(hiddenEmailValue(data.hiddenFields))
     if (!email) {
       const emailField = fields.find((field) => {
         const marker = String(

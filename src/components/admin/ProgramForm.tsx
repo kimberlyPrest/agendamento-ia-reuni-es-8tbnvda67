@@ -37,7 +37,7 @@ const TALLY_PLACEHOLDERS = [
   { label: 'Primeiro nome', token: '{firstname}' },
 ]
 
-const TALLY_TEMPLATE = 'https://tally.so/r/wdRX0N?email={clients_email}&firstname={firstname}'
+const TALLY_TEMPLATE = 'https://tally.so/r/wdRX0N?e-mail={clients_email}&firstname={firstname}'
 
 const programSchema = z.object({
   name: z.string().min(1, 'Nome é obrigatório'),
@@ -236,7 +236,7 @@ export function ProgramForm({ program, onSuccess }: ProgramFormProps) {
                 ))}
               </div>
               <p className="text-xs text-muted-foreground">
-                Modelo configurado para o formulário wdRX0N.
+                Modelo configurado para o formulário wdRX0N, usando o hidden field e-mail.
               </p>
               <FormMessage />
             </FormItem>

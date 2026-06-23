@@ -52,10 +52,13 @@ export default function ClientStatus() {
   const tallyTemplate =
     program?.tally_form_template ||
     program?.tally_form_url ||
-    'https://tally.so/r/wdRX0N?email={clients_email}&firstname={firstname}'
+    'https://tally.so/r/wdRX0N?e-mail={clients_email}&firstname={firstname}'
   const replaceToken = (value: string, token: string, replacement: string) =>
     value.split(token).join(replacement)
-  let tallyUrl = tallyTemplate.split('firstname={clients_name}').join('firstname={firstname}')
+  let tallyUrl = tallyTemplate
+    .replace(/([?&])email=/gi, '$1e-mail=')
+    .split('firstname={clients_name}')
+    .join('firstname={firstname}')
   const rawEmail = String(client.email || '').trim()
   const rawName = String(client.name || '').trim()
   const rawFirstName = String(firstName || '').trim()
