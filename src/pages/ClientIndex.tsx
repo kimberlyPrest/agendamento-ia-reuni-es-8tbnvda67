@@ -85,7 +85,7 @@ export default function ClientIndex() {
           <div className="mt-5 border-t border-border pt-4 text-sm text-muted-foreground">
             Quer ver gravações, histórico e dados da consultoria?{' '}
             <Link to="/login" className="text-primary hover:underline">
-              Entrar na central
+              Entrar na sua contal
             </Link>
           </div>
         </CardContent>
