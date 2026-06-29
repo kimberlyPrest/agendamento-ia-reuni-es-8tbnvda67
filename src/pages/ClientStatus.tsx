@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Clock,
   ExternalLink,
+  Info,
   LogIn,
   MessageCircle,
   RefreshCw,
@@ -15,12 +16,7 @@ import {
 import { differenceInHours, format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
-import {
-  EliteBrand,
-  EliteHeaderAction,
-  EliteKicker,
-  ElitePanel,
-} from '@/components/elite/ElitePrimitives'
+import { EliteKicker, ElitePanel } from '@/components/elite/ElitePrimitives'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { cancelMeeting } from '@/services/api'
@@ -28,22 +24,29 @@ import { useClientStore } from '@/stores/use-client-store'
 
 function ClientFlowHeader() {
   return (
-    <header className="mx-auto flex h-12 w-full max-w-[1080px] shrink-0 items-center justify-between px-4 sm:h-14 sm:px-6">
-      <EliteBrand compact className="origin-left scale-75" />
-      <EliteHeaderAction className="h-9 w-9">
+    <header className="relative z-10 mx-auto flex w-full max-w-[1080px] shrink-0 items-center justify-between px-5 py-5 sm:px-6 sm:py-6">
+      <div className="flex items-center gap-3 text-primary">
+        <div className="h-10 w-10 rounded-md bg-[#3dae92] shadow-[0_18px_40px_-22px_rgba(61,174,146,.7)] sm:h-12 sm:w-12" />
+        <div className="font-display text-[1.45rem] font-extrabold leading-[1.08] sm:text-[1.8rem]">
+          <span className="block">Adapta</span>
+          <span className="block">Elite</span>
+        </div>
+      </div>
+      <div className="flex h-10 w-10 items-center justify-center rounded-full border border-border bg-secondary text-muted-foreground transition-colors hover:border-primary/40 hover:bg-muted hover:text-primary sm:h-12 sm:w-12">
         <LogIn className="h-4 w-4" />
-      </EliteHeaderAction>
+      </div>
     </header>
   )
 }
 
 function StatusShell({ children, narrow = false }: { children: ReactNode; narrow?: boolean }) {
   return (
-    <section className="animate-fade-in-up flex h-dvh flex-col overflow-hidden">
+    <section className="animate-fade-in-up relative isolate flex h-dvh min-h-[540px] flex-col overflow-hidden bg-surface-deep">
+      <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_50%_38%,rgba(61,174,146,.1),transparent_33rem)]" />
       <ClientFlowHeader />
       <main
         className={cn(
-          'mx-auto flex min-h-0 w-full flex-1 flex-col overflow-y-auto px-4 pb-3 pt-2 sm:px-6 sm:pb-5',
+          'relative z-10 mx-auto flex min-h-0 w-full flex-1 flex-col overflow-hidden px-5 pb-5 pt-1 sm:px-6 sm:pb-7',
           narrow ? 'max-w-[720px] justify-center' : 'max-w-[1080px]',
         )}
       >
@@ -53,29 +56,78 @@ function StatusShell({ children, narrow = false }: { children: ReactNode; narrow
   )
 }
 
-function CompactChecklist({ action }: { action: ReactNode }) {
+function StatusGuidelines({
+  action,
+  minRescheduleHours,
+}: {
+  action: ReactNode
+  minRescheduleHours: number
+}) {
   const items = [
-    'Escolha um horário sem reuniões coladas.',
-    'Remarcações precisam respeitar a antecedência mínima.',
-    'O novo horário depende da agenda do consultor.',
+    {
+      active: true,
+      text: (
+        <>
+          Escolha um dia e horário tranquilo, em que consiga dedicar uma atenção plena, sem reuniões
+          coladas, sem correria.
+        </>
+      ),
+    },
+    {
+      active: true,
+      text: (
+        <>
+          Se precisar remarcar, faça isso com no mínimo{' '}
+          <span className="font-semibold text-primary">{minRescheduleHours}h antecedência</span>.
+        </>
+      ),
+    },
+    {
+      active: false,
+      text: <>O novo horário depende da agenda do consultor e pode entrar no fim da fila.</>,
+    },
   ]
 
   return (
-    <ElitePanel className="mt-4 flex min-h-0 flex-col p-3 sm:p-4">
-      <div className="space-y-3">
+    <ElitePanel className="mx-auto flex w-full max-w-3xl shrink flex-col rounded-xl bg-[linear-gradient(135deg,#111817,#0a0e0d)] p-5 sm:p-6 md:p-8">
+      <h2 className="flex items-center gap-3 font-display text-xl font-extrabold text-foreground sm:text-2xl">
+        <Info className="h-5 w-5 text-primary" />
+        Diretrizes
+      </h2>
+
+      <div className="mt-6 space-y-5 sm:mt-7 sm:space-y-7">
         {items.map((item, index) => (
-          <div key={item} className="grid grid-cols-[18px_1fr] gap-3">
+          <div key={index} className="grid grid-cols-[24px_1fr] gap-4">
             <div className="relative flex justify-center">
               {index < items.length - 1 && (
-                <span className="absolute top-3 h-[calc(100%+.75rem)] w-px bg-primary/70" />
+                <span
+                  className={cn(
+                    'absolute top-4 h-[calc(100%+1.75rem)] w-px',
+                    index === 0 ? 'bg-primary' : 'bg-gradient-to-b from-primary to-border',
+                  )}
+                />
               )}
-              <span className="relative mt-1 h-2.5 w-2.5 rounded-full border border-primary bg-background shadow-[0_0_12px_rgba(109,217,187,.75)]" />
+              <span
+                className={cn(
+                  'relative mt-1 h-3 w-3 rounded-full border-2 bg-surface-deep',
+                  item.active
+                    ? 'border-primary shadow-[0_0_12px_rgba(109,217,187,.85)]'
+                    : 'border-muted-foreground/40',
+                )}
+              />
             </div>
-            <p className="text-xs font-semibold leading-5 text-foreground/80">{item}</p>
+            <p
+              className={cn(
+                'text-sm font-semibold leading-7 sm:text-base',
+                item.active ? 'text-muted-foreground' : 'text-muted-foreground/40',
+              )}
+            >
+              {item.text}
+            </p>
           </div>
         ))}
       </div>
-      <div className="mt-4 border-t border-border pt-4">{action}</div>
+      <div className="mt-6 border-t border-border pt-5 sm:mt-7 sm:pt-6">{action}</div>
     </ElitePanel>
   )
 }
@@ -384,14 +436,14 @@ export default function ClientStatus() {
 
   return (
     <StatusShell>
-      <div className="shrink-0">
-        <EliteKicker className="min-h-6 px-3 text-[0.62rem] max-[720px]:hidden">
+      <div className="shrink-0 pt-[clamp(0.25rem,4vh,3.75rem)]">
+        <EliteKicker className="min-h-7 px-3 py-1 text-[0.64rem] max-[560px]:hidden">
           Sessão de consultoria
         </EliteKicker>
-        <h1 className="mt-2 max-w-4xl font-display text-2xl font-extrabold leading-tight sm:mt-3 sm:text-3xl md:text-4xl">
+        <h1 className="mt-4 max-w-5xl font-display text-[clamp(2.4rem,5.2vw,3.5rem)] font-extrabold leading-[1.06] text-foreground">
           Bem-vindo, <span className="text-primary">{firstName}</span>!
         </h1>
-        <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-muted-foreground max-[720px]:hidden md:text-base">
+        <p className="mt-4 max-w-4xl text-base font-semibold leading-7 text-muted-foreground max-[560px]:hidden sm:text-lg">
           Vamos agendar a sua reunião? Escolha o melhor horário com o seu consultor{' '}
           <span className="text-primary">{consultant?.name}</span>.
         </p>
@@ -400,23 +452,26 @@ export default function ClientStatus() {
       {stats?.stage_rules?.has_no_show &&
         noShowEarliestDate &&
         !Number.isNaN(noShowEarliestDate.getTime()) && (
-          <ElitePanel className="mt-3 shrink-0 border-[#fbbf24]/30 p-3 text-sm text-[#fbbf24]">
+          <ElitePanel className="mt-4 shrink-0 border-[#fbbf24]/30 p-3 text-sm text-[#fbbf24]">
             No-show registrado: essa reunião não consumiu saldo. Você pode reagendar a partir de{' '}
             {format(noShowEarliestDate, "dd 'de' MMMM", { locale: ptBR })}.
           </ElitePanel>
         )}
 
-      <CompactChecklist
-        action={
-          <Button
-            size="lg"
-            className="h-11 w-full rounded-full font-mono text-xs"
-            onClick={() => navigate('/schedule')}
-          >
-            Iniciar Agendamento <ArrowRight className="h-5 w-5" />
-          </Button>
-        }
-      />
+      <div className="mt-[clamp(1.25rem,6vh,4rem)] min-h-0 shrink">
+        <StatusGuidelines
+          minRescheduleHours={minRescheduleHours}
+          action={
+            <Button
+              size="lg"
+              className="h-12 w-full rounded-full bg-[#3dae92] font-mono text-xs font-semibold text-primary-foreground shadow-[0_18px_40px_-22px_rgba(61,174,146,.7)] hover:bg-primary"
+              onClick={() => navigate('/schedule')}
+            >
+              Iniciar Agendamento <ArrowRight className="h-5 w-5" />
+            </Button>
+          }
+        />
+      </div>
     </StatusShell>
   )
 }
