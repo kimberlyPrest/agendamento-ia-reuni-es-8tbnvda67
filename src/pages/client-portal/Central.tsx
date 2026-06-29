@@ -41,7 +41,7 @@ export default function ClientCentral() {
       })
       .catch((err) => setError(err.message || 'Erro ao carregar central.'))
       .finally(() => setLoading(false))
-  }, [])
+  }, [setClientData])
 
   if (loading) return <div className="text-muted-foreground">Carregando sua central...</div>
   if (error) return <div className="text-destructive">{error}</div>

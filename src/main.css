@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&family=Syne:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&family=Sora:wght@600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,75 +6,74 @@
 
 @layer base {
   :root {
-    --background: 0 0% 4%;
-    --foreground: 0 0% 100%;
+    --background: 160 17% 5%;
+    --foreground: 150 17% 96%;
 
-    --card: 0 0% 8%;
-    --card-foreground: 0 0% 100%;
+    --card: 165 17% 8%;
+    --card-foreground: 150 17% 96%;
 
-    --popover: 0 0% 8%;
-    --popover-foreground: 0 0% 100%;
+    --popover: 165 17% 8%;
+    --popover-foreground: 150 17% 96%;
 
-    --primary: 25 100% 50%;
-    --primary-foreground: 0 0% 100%;
+    --primary: 162 59% 64%;
+    --primary-foreground: 166 100% 6%;
 
-    --secondary: 0 0% 11%;
-    --secondary-foreground: 0 0% 100%;
+    --secondary: 160 8% 10%;
+    --secondary-foreground: 150 17% 96%;
 
-    --muted: 0 0% 16.5%;
-    --muted-foreground: 0 0% 53.3%;
-    --tertiary-foreground: 0 0% 26.7%;
+    --muted: 160 8% 16%;
+    --muted-foreground: 155 11% 69%;
+    --tertiary-foreground: 160 7% 39%;
 
-    --accent: 25 100% 50%;
-    --accent-foreground: 0 0% 100%;
+    --accent: 169 57% 51%;
+    --accent-foreground: 166 100% 6%;
 
-    --destructive: 0 100% 61%;
-    --destructive-foreground: 0 0% 100%;
+    --destructive: 6 100% 84%;
+    --destructive-foreground: 356 100% 20%;
 
-    --border: 0 0% 16.5%;
-    --input: 0 0% 16.5%;
-    --ring: 25 100% 50%;
+    --border: 157 12% 17%;
+    --input: 157 12% 17%;
+    --ring: 162 59% 64%;
 
-    --radius: 0.75rem;
+    --radius: 0.5rem;
 
-    --sidebar-background: 0 0% 8%;
-    --sidebar-foreground: 0 0% 100%;
-    --sidebar-primary: 25 100% 50%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 0 0% 11%;
-    --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 0 0% 16.5%;
-    --sidebar-ring: 25 100% 50%;
+    --sidebar-background: 165 17% 8%;
+    --sidebar-foreground: 150 17% 96%;
+    --sidebar-primary: 162 59% 64%;
+    --sidebar-primary-foreground: 166 100% 6%;
+    --sidebar-accent: 160 8% 10%;
+    --sidebar-accent-foreground: 150 17% 96%;
+    --sidebar-border: 157 12% 17%;
+    --sidebar-ring: 162 59% 64%;
 
-    --chart-1: 25 100% 50%;
-    --chart-2: 174 100% 39%;
-    --chart-3: 0 100% 61%;
-    --chart-4: 43 100% 50%;
-    --chart-5: 142 100% 39%;
+    --chart-1: 162 59% 64%;
+    --chart-2: 212 100% 69%;
+    --chart-3: 43 96% 56%;
+    --chart-4: 142 69% 58%;
+    --chart-5: 6 100% 84%;
   }
 
-  /* Force dark theme for the entire app as per the conversion-focused dark aesthetic */
   .dark {
-    --background: 0 0% 4%;
-    --foreground: 0 0% 100%;
-    --card: 0 0% 8%;
-    --card-foreground: 0 0% 100%;
-    --popover: 0 0% 8%;
-    --popover-foreground: 0 0% 100%;
-    --primary: 25 100% 50%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 0 0% 11%;
-    --secondary-foreground: 0 0% 100%;
-    --muted: 0 0% 16.5%;
-    --muted-foreground: 0 0% 53.3%;
-    --tertiary-foreground: 0 0% 26.7%;
-    --accent: 25 100% 50%;
-    --accent-foreground: 0 0% 100%;
-    --destructive: 0 100% 61%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 0 0% 16.5%;
-    --input: 0 0% 16.5%;
-    --ring: 25 100% 50%;
+    --background: 160 17% 5%;
+    --foreground: 150 17% 96%;
+    --card: 165 17% 8%;
+    --card-foreground: 150 17% 96%;
+    --popover: 165 17% 8%;
+    --popover-foreground: 150 17% 96%;
+    --primary: 162 59% 64%;
+    --primary-foreground: 166 100% 6%;
+    --secondary: 160 8% 10%;
+    --secondary-foreground: 150 17% 96%;
+    --muted: 160 8% 16%;
+    --muted-foreground: 155 11% 69%;
+    --tertiary-foreground: 160 7% 39%;
+    --accent: 169 57% 51%;
+    --accent-foreground: 166 100% 6%;
+    --destructive: 6 100% 84%;
+    --destructive-foreground: 356 100% 20%;
+    --border: 157 12% 17%;
+    --input: 157 12% 17%;
+    --ring: 162 59% 64%;
   }
 
   * {
@@ -82,10 +81,24 @@
   }
   body {
     @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings:
+      'cv02' 1,
+      'cv03' 1,
+      'cv04' 1;
   }
 }
 
 @layer utilities {
+  .elite-grid {
+    background:
+      radial-gradient(circle at 50% 40%, rgba(61, 174, 146, 0.14), transparent 34rem),
+      radial-gradient(circle, rgba(188, 201, 195, 0.1) 1px, transparent 1px), hsl(var(--background));
+    background-size:
+      100% 100%,
+      42px 42px,
+      auto;
+  }
+
   .text-balance {
     text-wrap: balance;
   }

@@ -1,6 +1,7 @@
 import { Link, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
+import { EliteBrand } from '@/components/elite/ElitePrimitives'
 import {
   Sidebar,
   SidebarContent,
@@ -34,8 +35,8 @@ export function ConsultantLayout() {
     <SidebarProvider>
       <Sidebar>
         <SidebarHeader className="p-4 border-b border-border">
-          <h2 className="font-display font-bold text-xl text-primary">Elite Hub</h2>
-          <p className="text-xs text-muted-foreground">Visão consultor</p>
+          <EliteBrand />
+          <p className="mt-3 text-xs text-muted-foreground">Visão consultor</p>
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup>
@@ -88,9 +89,9 @@ export function ConsultantLayout() {
           </Button>
         </div>
       </Sidebar>
-      <SidebarInset className="bg-background flex flex-col">
-        <header className="h-14 border-b border-border flex items-center px-6">
-          <h1 className="font-display font-medium">Central da Consultoria Elite</h1>
+      <SidebarInset className="elite-grid bg-background flex flex-col">
+        <header className="h-16 border-b border-border bg-card/70 flex items-center px-6 backdrop-blur">
+          <h1 className="font-display font-bold">Central da Consultoria Elite</h1>
         </header>
         <main className="flex-1 p-6 overflow-auto">
           <Outlet />

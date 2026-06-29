@@ -1,6 +1,7 @@
 import { Link, Navigate, Outlet } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
+import { EliteBrand } from '@/components/elite/ElitePrimitives'
 import { CalendarCheck, Home, LogOut, Video } from 'lucide-react'
 
 export function ClientPortalLayout() {
@@ -14,13 +15,16 @@ export function ClientPortalLayout() {
   if (role !== 'client') return <Navigate to="/login" replace />
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="elite-grid min-h-screen bg-background">
       <header className="border-b border-border bg-card/70 sticky top-0 z-30 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-          <Link to="/cliente/central" className="font-display text-xl font-bold text-primary">
-            Elite Hub
+          <Link to="/cliente/central" aria-label="Central Elite">
+            <EliteBrand
+              compact
+              className="[&>div:first-child]:h-9 [&>div:first-child]:w-9 [&>div:last-child]:text-xl"
+            />
           </Link>
-          <nav className="flex items-center gap-2">
+          <nav className="flex flex-wrap items-center justify-end gap-2">
             <Button variant="ghost" size="sm" asChild>
               <Link to="/cliente/central">
                 <Home className="w-4 h-4 mr-2" /> Central

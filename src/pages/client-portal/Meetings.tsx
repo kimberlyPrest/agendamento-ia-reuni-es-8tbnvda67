@@ -50,7 +50,7 @@ export default function ClientMeetings() {
         )
       })
       .finally(() => setLoading(false))
-  }, [])
+  }, [setClientData])
 
   const canSchedule =
     portal &&

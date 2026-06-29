@@ -1,20 +1,70 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useClientStore } from '@/stores/use-client-store'
-import { cancelMeeting } from '@/services/api'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import {
-  Calendar,
-  Clock,
-  Video,
-  AlertCircle,
+  AlertTriangle,
   ArrowRight,
+  Calendar,
+  CheckCircle2,
+  Clock,
   ExternalLink,
+  LogIn,
   RefreshCw,
+  Video,
 } from 'lucide-react'
-import { format, differenceInHours } from 'date-fns'
+import { differenceInHours, format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
+
+import {
+  EliteBrand,
+  EliteGuidelines,
+  EliteHeaderAction,
+  EliteKicker,
+  ElitePanel,
+} from '@/components/elite/ElitePrimitives'
+import { Button } from '@/components/ui/button'
+import { cancelMeeting } from '@/services/api'
+import { useClientStore } from '@/stores/use-client-store'
+
+function ClientFlowHeader() {
+  return (
+    <header className="mx-auto flex max-w-7xl items-center justify-between px-6 py-8">
+      <EliteBrand />
+      <EliteHeaderAction>
+        <LogIn className="h-6 w-6" />
+      </EliteHeaderAction>
+    </header>
+  )
+}
+
+function replaceToken(value: string, token: string, replacement: string) {
+  return value.split(token).join(replacement)
+}
+
+function buildTallyUrl(client: any, program: any, firstName: string) {
+  const tallyTemplate =
+    program?.tally_form_template ||
+    program?.tally_form_url ||
+    'https://tally.so/r/wdRX0N?e-mail={clients_email}&firstname={firstname}'
+  let tallyUrl = tallyTemplate
+    .replace(/([?&])email=/gi, '$1e-mail=')
+    .split('firstname={clients_name}')
+    .join('firstname={firstname}')
+  const rawEmail = String(client.email || '').trim()
+  const rawName = String(client.name || '').trim()
+  const rawFirstName = String(firstName || '').trim()
+
+  ;['{clients_email}', '{client_email}', '{email}'].forEach((token) => {
+    tallyUrl = replaceToken(tallyUrl, token, rawEmail)
+  })
+  ;['{clients_name}', '{client_name}'].forEach((token) => {
+    tallyUrl = replaceToken(tallyUrl, token, rawName)
+  })
+  ;['{firstname}', '{first_name}'].forEach((token) => {
+    tallyUrl = replaceToken(tallyUrl, token, rawFirstName)
+  })
+
+  return tallyUrl.replace(/%40/gi, '@')
+}
 
 export default function ClientStatus() {
   const { client, upcomingMeeting, stats, refreshClient } = useClientStore()
@@ -49,29 +99,7 @@ export default function ClientStatus() {
   const noShowEarliestDate = stats?.no_show_earliest_start
     ? new Date(stats.no_show_earliest_start)
     : null
-  const tallyTemplate =
-    program?.tally_form_template ||
-    program?.tally_form_url ||
-    'https://tally.so/r/wdRX0N?e-mail={clients_email}&firstname={firstname}'
-  const replaceToken = (value: string, token: string, replacement: string) =>
-    value.split(token).join(replacement)
-  let tallyUrl = tallyTemplate
-    .replace(/([?&])email=/gi, '$1e-mail=')
-    .split('firstname={clients_name}')
-    .join('firstname={firstname}')
-  const rawEmail = String(client.email || '').trim()
-  const rawName = String(client.name || '').trim()
-  const rawFirstName = String(firstName || '').trim()
-  ;['{clients_email}', '{client_email}', '{email}'].forEach((token) => {
-    tallyUrl = replaceToken(tallyUrl, token, rawEmail)
-  })
-  ;['{clients_name}', '{client_name}'].forEach((token) => {
-    tallyUrl = replaceToken(tallyUrl, token, rawName)
-  })
-  ;['{firstname}', '{first_name}'].forEach((token) => {
-    tallyUrl = replaceToken(tallyUrl, token, rawFirstName)
-  })
-  tallyUrl = tallyUrl.replace(/%40/gi, '@')
+  const tallyUrl = buildTallyUrl(client, program, firstName)
 
   const handleRefresh = async () => {
     setFeedback('')
@@ -104,97 +132,93 @@ export default function ClientStatus() {
 
   if (stats?.booking_blocked) {
     return (
-      <section className="animate-fade-in-up space-y-6 text-center">
-        <p className="text-primary font-medium">{program?.name}</p>
-        <h2 className="font-display font-bold text-2xl">Agendamento indisponível</h2>
-        <Card className="bg-card border-destructive/40 shadow-none">
-          <CardContent className="p-6 space-y-5">
-            <div className="mx-auto w-12 h-12 bg-destructive/10 rounded-full flex items-center justify-center">
-              <AlertCircle className="w-6 h-6 text-destructive" />
-            </div>
-            <p className="text-muted-foreground leading-relaxed">
+      <section className="animate-fade-in-up min-h-screen">
+        <ClientFlowHeader />
+        <div className="mx-auto flex max-w-3xl flex-col items-center px-6 py-16 text-center">
+          <EliteKicker>{program?.name || 'Consultoria Elite'}</EliteKicker>
+          <h1 className="mt-8 font-display text-5xl font-extrabold">Agendamento indisponível</h1>
+          <ElitePanel className="mt-10 p-8">
+            <AlertTriangle className="mx-auto h-12 w-12 text-destructive" />
+            <p className="mt-6 text-lg leading-8 text-muted-foreground">
               {stats.block_reason ||
                 'O status atual da consultoria não permite novos agendamentos.'}
             </p>
             {consultant?.whatsapp_number && (
-              <Button asChild size="lg" className="w-full">
+              <Button asChild size="lg" className="mt-8 w-full">
                 <a
                   href={`https://wa.me/${consultant.whatsapp_number}`}
                   target="_blank"
                   rel="noreferrer"
                 >
-                  Falar com o consultor <ArrowRight className="w-4 h-4 ml-2" />
+                  Falar com o consultor <ArrowRight className="h-5 w-5" />
                 </a>
               </Button>
             )}
-          </CardContent>
-        </Card>
+          </ElitePanel>
+        </div>
       </section>
     )
   }
 
   if (stats?.requires_tally) {
     return (
-      <section className="animate-fade-in-up space-y-6">
-        <div className="text-center space-y-2">
-          <p className="text-primary font-medium">{program?.name}</p>
-          <h2 className="font-display font-bold text-2xl">Antes de agendar</h2>
-        </div>
-        <Card className="bg-card border-primary/30 shadow-none">
-          <CardContent className="p-6 space-y-6 text-center">
-            <div className="mx-auto w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center">
-              <AlertCircle className="w-6 h-6 text-primary" />
-            </div>
-            <p className="text-lg leading-relaxed">
+      <section className="animate-fade-in-up min-h-screen">
+        <ClientFlowHeader />
+        <div className="mx-auto flex max-w-3xl flex-col items-center px-6 py-16 text-center">
+          <EliteKicker>{program?.name || 'Consultoria Elite'}</EliteKicker>
+          <h1 className="mt-8 font-display text-5xl font-extrabold">Antes de agendar</h1>
+          <ElitePanel className="mt-10 p-8">
+            <p className="text-xl leading-9">
               Responda o formulário para que o(a) consultor(a){' '}
               <strong className="text-primary">{consultant?.name}</strong> possa se preparar para te
               atender com contexto.
             </p>
-            <div className="flex flex-col gap-3 pt-2">
+            <div className="mt-8 grid gap-3">
               <Button
                 type="button"
                 size="lg"
-                className="w-full text-base"
+                className="w-full"
                 disabled={!tallyUrl}
                 onClick={() => window.open(tallyUrl, '_blank', 'noopener,noreferrer')}
               >
-                Responder formulário <ExternalLink className="w-4 h-4 ml-2" />
+                Responder formulário <ExternalLink className="h-5 w-5" />
               </Button>
               <Button variant="outline" onClick={handleRefresh} className="w-full">
-                <RefreshCw className="w-4 h-4 mr-2" /> Já respondi, verificar agora
+                <RefreshCw className="h-4 w-4" /> Já respondi, verificar agora
               </Button>
-              <p className="text-xs text-muted-foreground">
-                A verificação também acontece automaticamente assim que o Tally enviar a resposta.
-              </p>
               {feedback && <p className="text-sm text-muted-foreground">{feedback}</p>}
             </div>
-          </CardContent>
-        </Card>
+          </ElitePanel>
+        </div>
       </section>
     )
   }
 
   if (stats?.finalised) {
     return (
-      <section className="animate-fade-in-up space-y-6 text-center">
-        <p className="text-primary font-medium">{program?.name}</p>
-        <h2 className="font-display font-bold text-2xl">Consultoria finalizada</h2>
-        <Card className="bg-card border-border shadow-none">
-          <CardContent className="p-6 space-y-5">
-            <p className="text-muted-foreground leading-relaxed">
+      <section className="animate-fade-in-up min-h-screen">
+        <ClientFlowHeader />
+        <div className="mx-auto flex max-w-3xl flex-col items-center px-6 py-16 text-center">
+          <EliteKicker>{program?.name || 'Consultoria Elite'}</EliteKicker>
+          <h1 className="mt-8 font-display text-5xl font-extrabold">Consultoria finalizada</h1>
+          <ElitePanel className="mt-10 p-8">
+            <CheckCircle2 className="mx-auto h-14 w-14 text-primary" />
+            <p className="mt-6 text-lg leading-8 text-muted-foreground">
               Você já realizou todas as consultorias previstas para este programa.
             </p>
-            <Button asChild size="lg" className="w-full">
-              <a
-                href={`https://wa.me/${consultant?.whatsapp_number}`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Falar sobre upgrade <ArrowRight className="w-4 h-4 ml-2" />
-              </a>
-            </Button>
-          </CardContent>
-        </Card>
+            {consultant?.whatsapp_number && (
+              <Button asChild size="lg" className="mt-8 w-full">
+                <a
+                  href={`https://wa.me/${consultant.whatsapp_number}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Falar sobre upgrade <ArrowRight className="h-5 w-5" />
+                </a>
+              </Button>
+            )}
+          </ElitePanel>
+        </div>
       </section>
     )
   }
@@ -204,134 +228,133 @@ export default function ClientStatus() {
     const canChange = differenceInHours(meetDate, new Date()) >= minRescheduleHours
 
     return (
-      <section className="animate-fade-in-up space-y-6">
-        <div className="text-center space-y-2">
-          <p className="text-primary font-medium">{program?.name}</p>
-          <h2 className="font-display font-bold text-2xl">Olá, {firstName}, como vai?</h2>
-          <p className="text-muted-foreground">
-            Seu agendamento já foi realizado com o(a) {consultant?.name}.
-          </p>
-        </div>
-
-        <Card className="bg-secondary border-border overflow-hidden shadow-none">
-          <div className="bg-primary/10 px-6 py-4 border-b border-border/50">
-            <h3 className="font-display font-semibold text-lg flex items-center">
-              <Video className="w-5 h-5 mr-2 text-primary" />
-              {upcomingMeeting.title || 'Reunião agendada'}
-            </h3>
+      <section className="animate-fade-in-up min-h-screen">
+        <ClientFlowHeader />
+        <div className="mx-auto max-w-4xl px-6 py-16">
+          <div className="text-center">
+            <EliteKicker>{program?.name || 'Consultoria Elite'}</EliteKicker>
+            <h1 className="mt-8 font-display text-5xl font-extrabold">
+              Olá, <span className="text-primary">{firstName}</span>
+            </h1>
+            <p className="mt-4 text-xl text-muted-foreground">
+              Seu agendamento já foi realizado com o(a) {consultant?.name}.
+            </p>
           </div>
-          <CardContent className="p-6 space-y-6">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <div className="flex items-center text-muted-foreground text-sm">
-                  <Calendar className="w-4 h-4 mr-2" /> Data
+
+          <ElitePanel className="mt-10 overflow-hidden">
+            <div className="border-b border-border bg-primary/10 px-6 py-5">
+              <h2 className="flex items-center gap-3 font-display text-2xl font-bold">
+                <Video className="h-6 w-6 text-primary" />
+                {upcomingMeeting.title || 'Reunião agendada'}
+              </h2>
+            </div>
+            <div className="space-y-8 p-6 md:p-8">
+              <div className="grid gap-5 md:grid-cols-2">
+                <div className="rounded-md border border-border bg-secondary p-5">
+                  <div className="flex items-center text-sm text-muted-foreground">
+                    <Calendar className="mr-2 h-4 w-4" /> Data
+                  </div>
+                  <p className="mt-3 font-display text-xl font-bold">
+                    {format(meetDate, "dd 'de' MMMM", { locale: ptBR })}
+                  </p>
+                  <p className="mt-1 text-sm capitalize text-muted-foreground">
+                    {format(meetDate, 'EEEE', { locale: ptBR })}
+                  </p>
                 </div>
-                <p className="font-medium">{format(meetDate, "dd 'de' MMMM", { locale: ptBR })}</p>
-                <p className="text-sm text-muted-foreground capitalize">
-                  {format(meetDate, 'EEEE', { locale: ptBR })}
-                </p>
-              </div>
-              <div className="space-y-1">
-                <div className="flex items-center text-muted-foreground text-sm">
-                  <Clock className="w-4 h-4 mr-2" /> Horário
+                <div className="rounded-md border border-border bg-secondary p-5">
+                  <div className="flex items-center text-sm text-muted-foreground">
+                    <Clock className="mr-2 h-4 w-4" /> Horário
+                  </div>
+                  <p className="mt-3 font-display text-xl font-bold">
+                    {format(meetDate, 'HH:mm')} -{' '}
+                    {format(new Date(upcomingMeeting.end_time), 'HH:mm')}
+                  </p>
                 </div>
-                <p className="font-medium">
-                  {format(meetDate, 'HH:mm')} -{' '}
-                  {format(new Date(upcomingMeeting.end_time), 'HH:mm')}
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                {upcomingMeeting.meet_link && (
+                  <Button asChild variant="secondary" className="w-full">
+                    <a href={upcomingMeeting.meet_link} target="_blank" rel="noreferrer">
+                      Acessar Google Meet
+                    </a>
+                  </Button>
+                )}
+                {upcomingMeeting.google_html_link && (
+                  <Button asChild variant="outline" className="w-full">
+                    <a href={upcomingMeeting.google_html_link} target="_blank" rel="noreferrer">
+                      Ver evento no Google Calendar
+                    </a>
+                  </Button>
+                )}
+              </div>
+
+              {!canChange && (
+                <p className="rounded-md border border-[#fbbf24]/30 bg-[#fbbf24]/10 p-4 text-center text-sm text-[#fbbf24]">
+                  Cancelamentos exigem no mínimo {minRescheduleHours}h de antecedência. Você ainda
+                  pode remarcar, mas o novo horário precisa ser {lateRescheduleText}.
                 </p>
+              )}
+              {feedback && <p className="text-center text-sm text-muted-foreground">{feedback}</p>}
+
+              <div className="grid gap-3 border-t border-border pt-6 md:grid-cols-2">
+                <Button
+                  variant="outline"
+                  onClick={() => navigate(`/schedule?reschedule=${upcomingMeeting.id}`)}
+                  disabled={cancelling}
+                >
+                  Remarcar
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={handleCancel}
+                  disabled={!canChange || cancelling}
+                >
+                  Cancelar
+                </Button>
               </div>
             </div>
-
-            <div className="grid gap-3">
-              {upcomingMeeting.meet_link && (
-                <Button asChild className="w-full" variant="secondary">
-                  <a href={upcomingMeeting.meet_link} target="_blank" rel="noreferrer">
-                    Acessar Google Meet
-                  </a>
-                </Button>
-              )}
-              {upcomingMeeting.google_html_link && (
-                <Button asChild className="w-full" variant="outline">
-                  <a href={upcomingMeeting.google_html_link} target="_blank" rel="noreferrer">
-                    Ver evento no Google Calendar
-                  </a>
-                </Button>
-              )}
-            </div>
-
-            {!canChange && (
-              <p className="text-sm text-[#FFB800] bg-[#FFB800]/10 border border-[#FFB800]/20 rounded-md p-3 text-center">
-                Cancelamentos exigem no mínimo {minRescheduleHours}h de antecedência. Você ainda
-                pode remarcar, mas o novo horário precisa ser {lateRescheduleText}. Fale diretamente
-                com seu consultor se for urgente.
-              </p>
-            )}
-            {feedback && <p className="text-sm text-muted-foreground text-center">{feedback}</p>}
-
-            <div className="grid grid-cols-2 gap-3 pt-4 border-t border-border">
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={() => navigate(`/schedule?reschedule=${upcomingMeeting.id}`)}
-                disabled={cancelling}
-              >
-                Remarcar
-              </Button>
-              <Button
-                variant="destructive"
-                className="w-full bg-destructive/10 text-destructive hover:bg-destructive/20"
-                onClick={handleCancel}
-                disabled={!canChange || cancelling}
-              >
-                Cancelar
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+          </ElitePanel>
+        </div>
       </section>
     )
   }
 
   return (
-    <section className="animate-fade-in-up space-y-8">
-      <div className="text-center space-y-2">
-        <p className="text-primary font-medium tracking-wide">{program?.name}</p>
-        <h2 className="font-display font-bold text-3xl">Bem-vindo, {firstName}!</h2>
-        <p className="text-muted-foreground text-lg">
-          Vamos agendar a sua {stats?.next_meeting_number || client.current_meeting_number || 1}ª
-          reunião?
+    <section className="animate-fade-in-up min-h-screen">
+      <ClientFlowHeader />
+      <div className="mx-auto max-w-7xl px-6 py-20">
+        <EliteKicker>Sessão de consultoria</EliteKicker>
+        <h1 className="mt-8 max-w-6xl font-display text-5xl font-extrabold leading-tight md:text-7xl">
+          Bem-vindo, <span className="text-primary">{firstName}</span>!
+        </h1>
+        <p className="mt-8 max-w-5xl text-2xl font-semibold leading-10 text-muted-foreground">
+          Vamos agendar a sua reunião? Escolha o melhor horário com o seu consultor{' '}
+          <span className="text-primary">{consultant?.name}</span>.
         </p>
-        <p className="text-sm text-muted-foreground">
-          Agenda do(a) consultor(a) {consultant?.name}
-        </p>
-      </div>
 
-      <Card className="bg-[#FF6B0015] border-primary shadow-none">
-        <CardContent className="p-5 text-sm leading-relaxed text-foreground/90">
-          <strong className="block mb-2 text-primary">Importante:</strong>
-          Escolha um dia e horário tranquilos, em que consiga se dedicar por inteiro, sem reuniões
-          coladas, sem correria.
-          <br />
-          <br />
-          Se precisar remarcar, faça isso com no mínimo {minRescheduleHours}h de antecedência. O
-          novo horário depende da agenda do consultor e pode entrar no fim da fila.
-        </CardContent>
-      </Card>
-
-      {stats?.stage_rules?.has_no_show &&
-        noShowEarliestDate &&
-        !Number.isNaN(noShowEarliestDate.getTime()) && (
-          <Card className="bg-[#FFB800]/10 border-[#FFB800]/20 shadow-none">
-            <CardContent className="p-4 text-sm text-[#FFB800]">
+        {stats?.stage_rules?.has_no_show &&
+          noShowEarliestDate &&
+          !Number.isNaN(noShowEarliestDate.getTime()) && (
+            <ElitePanel className="mt-10 max-w-4xl border-[#fbbf24]/30 p-5 text-[#fbbf24]">
               No-show registrado: essa reunião não consumiu saldo. Você pode reagendar a partir de{' '}
               {format(noShowEarliestDate, "dd 'de' MMMM", { locale: ptBR })}.
-            </CardContent>
-          </Card>
-        )}
+            </ElitePanel>
+          )}
 
-      <Button size="lg" className="w-full text-lg h-14" onClick={() => navigate('/schedule')}>
-        Agendar agora <ArrowRight className="w-5 h-5 ml-2" />
-      </Button>
+        <EliteGuidelines
+          className="mx-auto mt-24 max-w-5xl"
+          action={
+            <Button
+              size="lg"
+              className="h-14 w-full font-mono"
+              onClick={() => navigate('/schedule')}
+            >
+              Iniciar Agendamento <ArrowRight className="h-5 w-5" />
+            </Button>
+          }
+        />
+      </div>
     </section>
   )
 }

@@ -1,14 +1,39 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { useClientStore } from '@/stores/use-client-store'
-import { bookMeeting, getAvailableSlots, rescheduleMeeting } from '@/services/api'
-import { Calendar } from '@/components/ui/calendar'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { differenceInHours, format } from 'date-fns'
+import {
+  addMonths,
+  differenceInHours,
+  eachDayOfInterval,
+  endOfMonth,
+  endOfWeek,
+  format,
+  isSameDay,
+  isSameMonth,
+  startOfMonth,
+  startOfWeek,
+  subMonths,
+} from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { Clock, ArrowLeft, AlertCircle, CalendarCheck, MessageCircle } from 'lucide-react'
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+} from 'lucide-react'
+
+import {
+  EliteBrand,
+  EliteGuidelines,
+  EliteHeaderAction,
+  EliteKicker,
+  ElitePanel,
+} from '@/components/elite/ElitePrimitives'
+import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
+import { bookMeeting, getAvailableSlots, rescheduleMeeting } from '@/services/api'
+import { useClientStore } from '@/stores/use-client-store'
 
 type Slot = {
   time: string
@@ -17,16 +42,120 @@ type Slot = {
   available?: boolean
 }
 
-type CalendarContext = {
-  google_connected?: boolean
-  google_connected_email?: string
-  calendar_source_count?: number
-  busy_calendar_ids?: string[]
-  uses_calendar_list?: boolean
+const weekdays = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB']
+
+function sameOrBefore(day: Date, maxDate: Date) {
+  const normalized = new Date(day)
+  normalized.setHours(0, 0, 0, 0)
+  const max = new Date(maxDate)
+  max.setHours(0, 0, 0, 0)
+  return normalized.getTime() <= max.getTime()
+}
+
+function sameOrAfter(day: Date, minDate: Date) {
+  const normalized = new Date(day)
+  normalized.setHours(0, 0, 0, 0)
+  const min = new Date(minDate)
+  min.setHours(0, 0, 0, 0)
+  return normalized.getTime() >= min.getTime()
+}
+
+function AvailabilityCalendar({
+  selected,
+  visibleMonth,
+  minDate,
+  maxDate,
+  onSelect,
+  onMonthChange,
+}: {
+  selected?: Date
+  visibleMonth: Date
+  minDate: Date
+  maxDate: Date
+  onSelect: (date: Date) => void
+  onMonthChange: (date: Date) => void
+}) {
+  const days = useMemo(() => {
+    const start = startOfWeek(startOfMonth(visibleMonth), { weekStartsOn: 0 })
+    const end = endOfWeek(endOfMonth(visibleMonth), { weekStartsOn: 0 })
+    return eachDayOfInterval({ start, end })
+  }, [visibleMonth])
+
+  return (
+    <div className="space-y-7">
+      <div className="flex items-center justify-between gap-4">
+        <h2 className="flex items-center gap-3 font-display text-2xl font-extrabold">
+          <span className="h-2.5 w-2.5 rounded-full bg-primary shadow-[0_0_16px_rgba(109,217,187,.9)]" />
+          Disponibilidade
+        </h2>
+        <div className="flex items-center gap-4">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            aria-label="Mês anterior"
+            onClick={() => onMonthChange(subMonths(visibleMonth, 1))}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <p className="w-28 text-center font-mono text-sm font-bold uppercase leading-5">
+            {format(visibleMonth, 'MMMM yyyy', { locale: ptBR })}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            aria-label="Próximo mês"
+            onClick={() => onMonthChange(addMonths(visibleMonth, 1))}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-7 gap-3">
+        {weekdays.map((day) => (
+          <div
+            key={day}
+            className="py-2 text-center font-mono text-sm font-bold text-muted-foreground"
+          >
+            {day}
+          </div>
+        ))}
+        {days.map((day) => {
+          const outsideMonth = !isSameMonth(day, visibleMonth)
+          const disabled = outsideMonth || !sameOrAfter(day, minDate) || !sameOrBefore(day, maxDate)
+          const selectedDay = selected ? isSameDay(day, selected) : false
+
+          return (
+            <button
+              key={day.toISOString()}
+              type="button"
+              disabled={disabled}
+              onClick={() => onSelect(day)}
+              className={cn(
+                'relative flex aspect-square min-h-16 items-center justify-center rounded-md border border-border bg-card text-xl font-bold text-muted-foreground transition-all duration-150 md:min-h-24',
+                'enabled:hover:border-primary enabled:hover:text-primary enabled:hover:shadow-[0_0_0_1px_rgba(109,217,187,.55),0_20px_40px_-28px_rgba(109,217,187,.85)]',
+                selectedDay &&
+                  'border-primary bg-primary text-primary-foreground shadow-[0_20px_48px_-20px_rgba(109,217,187,.85)] hover:text-primary-foreground',
+                disabled && 'cursor-not-allowed opacity-25',
+                outsideMonth && 'invisible',
+              )}
+            >
+              {format(day, 'd')}
+              {!selectedDay && !disabled && (
+                <span className="absolute bottom-2 h-1 w-1 rounded-full bg-primary opacity-0 transition-opacity group-hover:opacity-100" />
+              )}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
 }
 
 export default function ClientSchedule() {
-  const { client, upcomingMeeting, stats, refreshClient } = useClientStore()
+  const { client, upcomingMeeting, refreshClient } = useClientStore()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const rescheduleId = searchParams.get('reschedule')
@@ -38,9 +167,6 @@ export default function ClientSchedule() {
   const lateRescheduleUnit = lateRescheduleDelayDays === 1 ? 'dia' : 'dias'
   const existingMeetingDate =
     isRescheduling && upcomingMeeting?.start_time ? new Date(upcomingMeeting.start_time) : null
-  const noShowEarliestDate = stats?.no_show_earliest_start
-    ? new Date(stats.no_show_earliest_start)
-    : null
   const isLateReschedule = existingMeetingDate
     ? differenceInHours(existingMeetingDate, new Date()) < minRescheduleHours
     : false
@@ -48,11 +174,6 @@ export default function ClientSchedule() {
   today.setHours(0, 0, 0, 0)
   const minDate = new Date(today)
   if (isLateReschedule) minDate.setDate(minDate.getDate() + lateRescheduleDelayDays)
-  if (!isLateReschedule && noShowEarliestDate && !Number.isNaN(noShowEarliestDate.getTime())) {
-    const noShowDay = new Date(noShowEarliestDate)
-    noShowDay.setHours(0, 0, 0, 0)
-    if (noShowDay > minDate) minDate.setTime(noShowDay.getTime())
-  }
   const minDateTime = minDate.getTime()
   const initialDate = isLateReschedule
     ? minDate
@@ -61,22 +182,21 @@ export default function ClientSchedule() {
       : today
 
   const [date, setDate] = useState<Date | undefined>(initialDate)
+  const [visibleMonth, setVisibleMonth] = useState(startOfMonth(initialDate))
   const [slots, setSlots] = useState<Slot[]>([])
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null)
   const [loading, setLoading] = useState(false)
   const [booking, setBooking] = useState(false)
   const [error, setError] = useState('')
-  const [calendarContext, setCalendarContext] = useState<CalendarContext | null>(null)
 
   useEffect(() => {
     if (!client) navigate('/')
-    else if (stats?.booking_blocked || stats?.requires_tally || stats?.finalised)
-      navigate('/status')
-  }, [client, stats?.booking_blocked, stats?.requires_tally, stats?.finalised, navigate])
+  }, [client, navigate])
 
   useEffect(() => {
     if (isLateReschedule && date && date.getTime() < minDateTime) {
       setDate(new Date(minDateTime))
+      setVisibleMonth(startOfMonth(new Date(minDateTime)))
       return
     }
     if (date && client?.consultant_id) fetchSlots(date)
@@ -96,7 +216,7 @@ export default function ClientSchedule() {
         client.id,
         rescheduleId || undefined,
       )
-      let nextSlots = (data.slots || []).map((slot: Slot | string) => {
+      const nextSlots = (data.slots || []).map((slot: Slot | string) => {
         if (typeof slot !== 'string') return slot
         return {
           time: slot,
@@ -104,23 +224,10 @@ export default function ClientSchedule() {
           end_time: `${dateStr}T${slot}:00`,
         }
       })
-      if (noShowEarliestDate && !Number.isNaN(noShowEarliestDate.getTime())) {
-        nextSlots = nextSlots.filter(
-          (slot: Slot) => new Date(slot.start_time) >= noShowEarliestDate,
-        )
-      }
       setSlots(nextSlots)
-      setCalendarContext({
-        google_connected: data.google_connected,
-        google_connected_email: data.google_connected_email,
-        calendar_source_count: data.calendar_source_count,
-        busy_calendar_ids: data.busy_calendar_ids || [],
-        uses_calendar_list: data.uses_calendar_list,
-      })
       if (data.setup_required) setError(data.message || 'Agenda Google ainda não conectada.')
     } catch (err: any) {
       setSlots([])
-      setCalendarContext(null)
       setError(err.message || 'Não foi possível buscar horários.')
     } finally {
       setLoading(false)
@@ -157,137 +264,123 @@ export default function ClientSchedule() {
   const bookingWindow = Number(program?.booking_window_days || 60)
   const maxDate = new Date()
   maxDate.setDate(maxDate.getDate() + bookingWindow)
-  const consultantWhatsapp = String(consultant?.whatsapp_number || '').replace(/\D/g, '')
-  const consultantWhatsappUrl = consultantWhatsapp
-    ? `https://wa.me/${consultantWhatsapp}?text=${encodeURIComponent(
-        `Oi, ${consultant?.name || 'consultor(a)'}! Tentei agendar minha reunião pelo sistema, mas a agenda Google ainda não está conectada. Pode me ajudar?`,
-      )}`
-    : ''
-  const showWhatsappFallback =
-    Boolean(error) && calendarContext?.google_connected === false && Boolean(consultantWhatsappUrl)
+  maxDate.setHours(23, 59, 59, 999)
+  const firstName = client.name?.split(' ')[0] || client.name
+  const selectedDateLabel = date
+    ? format(date, "d 'de' MMMM", { locale: ptBR })
+    : 'Selecione uma data'
+  const shortDateLabel = date ? format(date, 'd MMM', { locale: ptBR }).toUpperCase() : ''
 
   return (
-    <section className="animate-fade-in-up space-y-6">
-      <Button variant="ghost" onClick={() => navigate('/status')} className="mb-2 -ml-4">
-        <ArrowLeft className="w-4 h-4 mr-2" /> Voltar
-      </Button>
+    <section className="animate-fade-in-up min-h-screen">
+      <header className="mx-auto flex max-w-7xl items-center justify-between px-6 py-8">
+        <EliteBrand />
+        <button type="button" aria-label="Voltar" onClick={() => navigate('/status')}>
+          <EliteHeaderAction>
+            <ArrowLeft className="h-6 w-6" />
+          </EliteHeaderAction>
+        </button>
+      </header>
 
-      <div className="space-y-1">
-        <p className="text-primary text-sm font-medium">{program?.name}</p>
-        <h2 className="font-display font-bold text-2xl">
-          {isRescheduling ? 'Escolha o novo horário' : 'Escolha uma data'}
-        </h2>
-        <p className="text-muted-foreground text-sm">
-          Agenda do(a) {consultant?.name}. Fuso horário: Horário de Brasília.
+      <div className="mx-auto max-w-7xl px-6 py-16">
+        <EliteKicker>Sessão de consultoria</EliteKicker>
+        <h1 className="mt-8 max-w-6xl font-display text-5xl font-extrabold leading-tight md:text-7xl">
+          {isRescheduling ? 'Escolha o novo horário' : 'Bem-vindo, '}
+          {!isRescheduling && <span className="text-primary">{firstName}</span>}
+          {!isRescheduling && '!'}
+        </h1>
+        <p className="mt-8 max-w-5xl text-2xl font-semibold leading-10 text-muted-foreground">
+          Vamos agendar a sua reunião? Escolha o melhor horário com o seu consultor{' '}
+          <span className="text-primary">{consultant?.name}</span>.
         </p>
-      </div>
 
-      {calendarContext?.google_connected && (
-        <div className="flex flex-col gap-3 rounded-lg border border-border bg-secondary p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <CalendarCheck className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-white">Agenda Google sincronizada</p>
-              <p className="text-xs text-muted-foreground">
-                Os horários abaixo respeitam a janela de atendimento e os conflitos encontrados na
-                agenda principal do consultor.
-              </p>
-            </div>
-          </div>
-          <Badge variant="outline" className="w-fit border-primary/30 text-primary">
-            Atualizado em tempo real
-          </Badge>
-        </div>
-      )}
+        {isLateReschedule && (
+          <ElitePanel className="mt-10 flex max-w-4xl gap-3 border-[#fbbf24]/30 p-4 text-[#fbbf24]">
+            <AlertTriangle className="mt-1 h-5 w-5 shrink-0" />
+            <span>
+              Como a remarcação passou do prazo mínimo, os novos horários aparecem a partir de{' '}
+              {lateRescheduleDelayDays} {lateRescheduleUnit}.
+            </span>
+          </ElitePanel>
+        )}
 
-      {isLateReschedule && (
-        <div className="text-sm text-[#FFB800] bg-[#FFB800]/10 border border-[#FFB800]/20 rounded-md p-3 flex gap-2">
-          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-          <span>
-            Como a remarcação passou do prazo mínimo, os novos horários aparecem a partir de{' '}
-            {lateRescheduleDelayDays} {lateRescheduleUnit}.
-          </span>
-        </div>
-      )}
-
-      <Card className="bg-card border-border overflow-hidden shadow-none">
-        <div className="flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-border">
-          <div className="p-4 flex justify-center">
-            <Calendar
-              mode="single"
+        <div className="mt-24 grid gap-8 lg:grid-cols-[1fr_0.48fr]">
+          <ElitePanel className="p-6 md:p-8">
+            <AvailabilityCalendar
               selected={date}
-              onSelect={setDate}
-              className="bg-transparent"
-              disabled={(day) => day < minDate || day > maxDate}
-              locale={ptBR}
+              visibleMonth={visibleMonth}
+              minDate={minDate}
+              maxDate={maxDate}
+              onSelect={(nextDate) => {
+                setDate(nextDate)
+                setVisibleMonth(startOfMonth(nextDate))
+              }}
+              onMonthChange={setVisibleMonth}
             />
-          </div>
-          <div className="p-6 md:w-72 flex flex-col">
-            <h3 className="font-medium mb-4 flex items-center">
-              <Clock className="w-4 h-4 mr-2" />
-              {date ? format(date, "dd 'de' MMMM", { locale: ptBR }) : 'Selecione uma data'}
-            </h3>
 
-            <div className="flex-1 overflow-y-auto pr-2 space-y-2 max-h-[280px]">
-              {loading ? (
-                <p className="text-sm text-muted-foreground text-center py-4">
-                  Buscando horários...
-                </p>
-              ) : error ? (
-                <div className="text-sm text-[#FFB800] bg-[#FFB800]/10 border border-[#FFB800]/20 rounded-md p-3 space-y-3">
-                  <div className="flex gap-2">
-                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <div className="mt-10 border-t border-border pt-8">
+              <div className="flex items-center gap-2 font-mono text-sm font-bold uppercase text-muted-foreground">
+                <Clock className="h-4 w-4" />
+                Horários disponíveis: {shortDateLabel}
+              </div>
+
+              <div className="mt-5 flex flex-wrap gap-3">
+                {loading ? (
+                  <p className="text-sm text-muted-foreground">Buscando horários...</p>
+                ) : error ? (
+                  <div className="flex w-full gap-3 rounded-md border border-[#fbbf24]/30 bg-[#fbbf24]/10 p-4 text-sm text-[#fbbf24]">
+                    <AlertTriangle className="h-5 w-5 shrink-0" />
                     <span>{error}</span>
                   </div>
-                  {showWhatsappFallback && (
+                ) : slots.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Sem horários disponíveis</p>
+                ) : (
+                  slots.map((slot) => (
                     <Button
+                      key={`${slot.start_time}-${slot.time}`}
                       type="button"
-                      variant="outline"
-                      className="w-full border-[#FFB800]/30 text-[#FFB800] hover:bg-[#FFB800]/10 hover:text-[#FFB800]"
-                      onClick={() =>
-                        window.open(consultantWhatsappUrl, '_blank', 'noopener,noreferrer')
-                      }
+                      variant={selectedSlot?.start_time === slot.start_time ? 'default' : 'outline'}
+                      className={cn(
+                        'h-11 min-w-24 font-mono',
+                        selectedSlot?.start_time === slot.start_time &&
+                          'bg-transparent text-primary ring-1 ring-primary hover:bg-primary/10',
+                      )}
+                      onClick={() => setSelectedSlot(slot)}
                     >
-                      <MessageCircle className="w-4 h-4 mr-2" />
-                      Falar com o consultor no WhatsApp
+                      {slot.time}
                     </Button>
-                  )}
-                </div>
-              ) : slots.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">
-                  Sem horários disponíveis
-                </p>
-              ) : (
-                slots.map((slot) => (
-                  <Button
-                    key={`${slot.start_time}-${slot.time}`}
-                    variant={selectedSlot?.start_time === slot.start_time ? 'default' : 'outline'}
-                    className="w-full justify-center font-medium"
-                    onClick={() => setSelectedSlot(slot)}
-                  >
-                    {slot.time}
-                  </Button>
-                ))
-              )}
+                  ))
+                )}
+              </div>
             </div>
-          </div>
-        </div>
-      </Card>
+          </ElitePanel>
 
-      <Button
-        size="lg"
-        className="w-full h-14 text-lg"
-        disabled={!selectedSlot || booking}
-        onClick={handleBook}
-      >
-        {booking
-          ? 'Salvando...'
-          : isRescheduling
-            ? 'Confirmar remarcação'
-            : 'Confirmar agendamento'}
-      </Button>
+          <EliteGuidelines
+            action={
+              <div className="space-y-4">
+                <p className="text-center text-sm text-muted-foreground">
+                  {selectedSlot
+                    ? `${selectedDateLabel} às ${selectedSlot.time}`
+                    : 'Selecione um dia e horário para continuar.'}
+                </p>
+                <Button
+                  size="lg"
+                  className="h-14 w-full font-mono"
+                  disabled={!selectedSlot || booking}
+                  onClick={handleBook}
+                >
+                  {booking
+                    ? 'Salvando...'
+                    : isRescheduling
+                      ? 'Confirmar Remarcação'
+                      : 'Confirmar Agendamento'}
+                  {!booking && <ArrowRight className="h-5 w-5" />}
+                </Button>
+              </div>
+            }
+          />
+        </div>
+      </div>
     </section>
   )
 }

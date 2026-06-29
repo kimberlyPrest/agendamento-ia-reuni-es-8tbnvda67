@@ -1,11 +1,12 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import pb from '@/lib/pocketbase/client'
-import { useAuth } from '@/hooks/use-auth'
+import { KeyRound, LogIn, UserRound } from 'lucide-react'
+
+import { EliteBrand, ElitePanel } from '@/components/elite/ElitePrimitives'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import pb from '@/lib/pocketbase/client'
+import { useAuth } from '@/hooks/use-auth'
 
 function routeForRecord(record?: any) {
   if (record?.role === 'admin') return '/admin/dashboard'
@@ -38,51 +39,67 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <Card className="w-full max-w-md bg-card border-border rounded-xl shadow-none">
-        <CardHeader className="space-y-3 text-center">
-          <Badge className="mx-auto w-fit bg-primary/15 text-primary hover:bg-primary/15">
-            Portal Elite
-          </Badge>
-          <CardTitle className="font-display text-3xl">Acesse sua central</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Clientes podem agendar sem senha pelo email. O login libera histórico, gravações e dados
-            da consultoria.
-          </p>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Email</label>
+    <main className="elite-grid flex min-h-screen items-center justify-center p-6">
+      <ElitePanel className="w-full max-w-md p-6 md:p-8">
+        <div className="mb-10 flex justify-center">
+          <EliteBrand compact className="[&>div:last-child]:text-4xl" />
+        </div>
+        <h1 className="text-center font-display text-4xl font-extrabold text-primary">
+          Consultoria Adapta
+        </h1>
+
+        <form onSubmit={handleSubmit} className="mt-10 space-y-5">
+          <div className="space-y-2">
+            <label className="font-mono text-sm font-semibold text-muted-foreground">Email</label>
+            <div className="relative">
+              <UserRound className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 type="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(event) => setEmail(event.target.value)}
+                className="pl-11"
+                placeholder="officer@adapta.elite"
                 required
               />
             </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Senha</label>
+          </div>
+
+          <div className="space-y-2">
+            <label className="font-mono text-sm font-semibold text-muted-foreground">Senha</label>
+            <div className="relative">
+              <KeyRound className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 type="password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(event) => setPassword(event.target.value)}
+                className="pl-11"
                 required
               />
             </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button type="submit" className="w-full" disabled={submitting}>
-              {submitting ? 'Entrando...' : 'Entrar'}
-            </Button>
-          </form>
-          <div className="mt-5 flex flex-col gap-2 text-center text-sm text-muted-foreground">
-            <Link to="/" className="text-primary hover:underline">
-              Agendar sem senha usando apenas meu email
-            </Link>
-            <span>Senha padrão inicial dos clientes importados: AdaptaElite26.</span>
           </div>
-        </CardContent>
-      </Card>
-    </div>
+
+          {error && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+
+          <Button type="submit" size="lg" className="h-14 w-full" disabled={submitting}>
+            {submitting ? 'Entrando...' : 'Entrar'}
+            {!submitting && <LogIn className="h-5 w-5" />}
+          </Button>
+        </form>
+
+        <div className="mt-8 flex items-center gap-4 text-center font-mono text-xs text-muted-foreground">
+          <span className="h-px flex-1 bg-border" />
+          <span>ou entrar via</span>
+          <span className="h-px flex-1 bg-border" />
+        </div>
+
+        <Button asChild variant="outline" className="mt-6 w-full">
+          <Link to="/">Agendamento sem senha</Link>
+        </Button>
+      </ElitePanel>
+    </main>
   )
 }

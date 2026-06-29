@@ -1,15 +1,8 @@
 import { Outlet, Navigate, Link } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
-import {
-  DatabaseZap,
-  LayoutDashboard,
-  Users,
-  CalendarDays,
-  LogOut,
-  UserCog,
-  BriefcaseBusiness,
-} from 'lucide-react'
+import { EliteBrand } from '@/components/elite/ElitePrimitives'
+import { LayoutDashboard, Users, CalendarDays, LogOut, UserCog, Database } from 'lucide-react'
 import {
   SidebarProvider,
   Sidebar,
@@ -23,23 +16,16 @@ import {
 } from '@/components/ui/sidebar'
 
 export function AdminLayout() {
-  const { user, isAuthenticated, loading, signOut } = useAuth()
+  const { isAuthenticated, loading, signOut } = useAuth()
 
   if (loading) return null
-  if (!isAuthenticated) return <Navigate to="/login" replace />
-  if (user?.role !== 'admin')
-    return (
-      <Navigate
-        to={user?.role === 'consultant' ? '/consultor/dashboard' : '/cliente/central'}
-        replace
-      />
-    )
+  if (!isAuthenticated) return <Navigate to="/admin/login" replace />
 
   return (
     <SidebarProvider>
       <Sidebar>
         <SidebarHeader className="p-4 border-b border-border">
-          <h2 className="font-display font-bold text-xl text-primary">Elite Admin</h2>
+          <EliteBrand />
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup>
@@ -75,14 +61,7 @@ export function AdminLayout() {
               <SidebarMenuItem>
                 <SidebarMenuButton asChild>
                   <Link to="/admin/ids">
-                    <DatabaseZap className="w-4 h-4 mr-2" /> IDs externos
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild>
-                  <Link to="/consultor/dashboard">
-                    <BriefcaseBusiness className="w-4 h-4 mr-2" /> Visão consultor
+                    <Database className="w-4 h-4 mr-2" /> IDs externos
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -99,9 +78,9 @@ export function AdminLayout() {
           </Button>
         </div>
       </Sidebar>
-      <SidebarInset className="bg-background flex flex-col">
-        <header className="h-14 border-b border-border flex items-center px-6">
-          <h1 className="font-display font-medium">Gestão de Consultoria</h1>
+      <SidebarInset className="elite-grid bg-background flex flex-col">
+        <header className="h-16 border-b border-border bg-card/70 flex items-center px-6 backdrop-blur">
+          <h1 className="font-display font-bold">Gestão de Consultoria</h1>
         </header>
         <main className="flex-1 p-6 overflow-auto">
           <Outlet />
