@@ -53,9 +53,9 @@ function isTechnicalCalendarError(message = '') {
   )
 }
 
-function whatsappHref(phone: string | undefined, text: string) {
+function whatsappHref(phone: string | undefined) {
   const digits = String(phone || '').replace(/\D/g, '')
-  return digits ? `https://wa.me/${digits}?text=${encodeURIComponent(text)}` : ''
+  return digits ? `https://wa.me/${digits}` : ''
 }
 
 function sameOrBefore(day: Date, maxDate: Date) {
@@ -351,8 +351,7 @@ export default function ClientSchedule() {
     : 'Selecione uma data'
   const shortDateLabel = date ? format(date, 'd MMM', { locale: ptBR }).toUpperCase() : ''
   const supportHref = whatsappHref(
-    consultant?.whatsapp_number,
-    `Olá! Não consegui carregar os horários para agendar minha reunião do programa ${program?.name || ''}. Pode me ajudar?`,
+    consultant?.whatsapp_number || consultant?.phone || consultant?.contact_phone,
   )
   const scheduleAction = (
     <div className="space-y-3">
@@ -394,12 +393,12 @@ export default function ClientSchedule() {
             Sessão de consultoria
           </EliteKicker>
           <h1 className="mt-2 max-w-4xl font-display text-2xl font-extrabold leading-tight sm:mt-3 sm:text-3xl md:text-4xl">
-            {isRescheduling ? 'Escolha o novo horário' : 'Bem-vindo, '}
+            {isRescheduling ? 'Escolha o novo horário' : 'Agende sua reunião, '}
             {!isRescheduling && <span className="text-primary">{firstName}</span>}
             {!isRescheduling && '!'}
           </h1>
           <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-muted-foreground max-[720px]:hidden md:text-base">
-            Vamos agendar a sua reunião? Escolha o melhor horário com o seu consultor{' '}
+            Escolha o melhor horário disponível na agenda do seu consultor{' '}
             <span className="text-primary">{consultant?.name}</span>.
           </p>
         </div>
@@ -415,7 +414,7 @@ export default function ClientSchedule() {
         )}
 
         <div className="mt-3 grid min-h-0 flex-1 gap-4 sm:mt-5 lg:grid-cols-[minmax(0,1fr)_300px]">
-          <ElitePanel className="flex min-h-0 flex-col p-3 sm:p-4 md:p-5">
+          <ElitePanel className="flex min-h-0 flex-col overflow-hidden p-3 sm:p-4 md:p-5">
             <AvailabilityCalendar
               selected={date}
               visibleMonth={visibleMonth}
@@ -428,56 +427,62 @@ export default function ClientSchedule() {
               onMonthChange={setVisibleMonth}
             />
 
-            <div className="mt-4 border-t border-border pt-3">
-              <div className="flex items-center gap-2 font-mono text-[0.68rem] font-bold uppercase text-muted-foreground">
+            <div className="mt-4 flex min-h-0 flex-1 flex-col border-t border-border pt-3">
+              <div className="flex shrink-0 items-center gap-2 font-mono text-[0.68rem] font-bold uppercase text-muted-foreground">
                 <Clock className="h-4 w-4" />
                 Horários disponíveis: {shortDateLabel}
               </div>
 
-              <div className="mt-3 flex flex-wrap gap-2">
-                {loading ? (
-                  <p className="text-sm text-muted-foreground">Buscando horários...</p>
-                ) : error ? (
-                  <div className="flex w-full flex-col gap-3 rounded-md border border-[#fbbf24]/30 bg-[#fbbf24]/10 p-3 text-sm text-[#fbbf24] sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex gap-3">
-                      <AlertTriangle className="h-5 w-5 shrink-0" />
-                      <span>{error}</span>
-                    </div>
-                    {needsConsultantSupport && supportHref && (
-                      <Button
-                        asChild
-                        size="sm"
-                        variant="outline"
-                        className="h-9 shrink-0 border-[#fbbf24]/40 text-[#fbbf24] hover:bg-[#fbbf24]/10"
-                      >
-                        <a href={supportHref} target="_blank" rel="noreferrer">
-                          WhatsApp <MessageCircle className="h-4 w-4" />
-                        </a>
-                      </Button>
-                    )}
-                  </div>
-                ) : slots.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Sem horários disponíveis</p>
-                ) : (
-                  slots.map((slot) => (
-                    <Button
-                      key={`${slot.start_time}-${slot.time}`}
-                      type="button"
-                      variant={selectedSlot?.start_time === slot.start_time ? 'default' : 'outline'}
-                      className={cn(
-                        'h-9 min-w-20 rounded-full px-4 font-mono text-xs',
-                        selectedSlot?.start_time === slot.start_time &&
-                          'bg-transparent text-primary ring-1 ring-primary hover:bg-primary/10',
+              <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
+                <div className="flex flex-wrap gap-2 pb-1">
+                  {loading ? (
+                    <p className="text-sm text-muted-foreground">Buscando horários...</p>
+                  ) : error ? (
+                    <div className="flex w-full min-w-0 flex-col gap-3 rounded-md border border-[#fbbf24]/30 bg-[#fbbf24]/10 p-3 text-sm text-[#fbbf24] sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex min-w-0 gap-3">
+                        <AlertTriangle className="h-5 w-5 shrink-0" />
+                        <span className="min-w-0 leading-5">{error}</span>
+                      </div>
+                      {needsConsultantSupport && supportHref && (
+                        <Button
+                          asChild
+                          size="sm"
+                          variant="outline"
+                          className="h-9 w-full shrink-0 border-[#fbbf24]/40 text-[#fbbf24] hover:bg-[#fbbf24]/10 sm:w-auto"
+                        >
+                          <a href={supportHref} target="_blank" rel="noreferrer">
+                            WhatsApp <MessageCircle className="h-4 w-4" />
+                          </a>
+                        </Button>
                       )}
-                      onClick={() => setSelectedSlot(slot)}
-                    >
-                      {slot.time}
-                    </Button>
-                  ))
-                )}
+                    </div>
+                  ) : slots.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Sem horários disponíveis</p>
+                  ) : (
+                    slots.map((slot) => (
+                      <Button
+                        key={`${slot.start_time}-${slot.time}`}
+                        type="button"
+                        variant={
+                          selectedSlot?.start_time === slot.start_time ? 'default' : 'outline'
+                        }
+                        className={cn(
+                          'h-9 min-w-20 rounded-full px-4 font-mono text-xs',
+                          selectedSlot?.start_time === slot.start_time &&
+                            'bg-transparent text-primary ring-1 ring-primary hover:bg-primary/10',
+                        )}
+                        onClick={() => setSelectedSlot(slot)}
+                      >
+                        {slot.time}
+                      </Button>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
-            <div className="mt-auto border-t border-border pt-3 lg:hidden">{scheduleAction}</div>
+            <div className="mt-3 shrink-0 border-t border-border pt-3 lg:hidden">
+              {scheduleAction}
+            </div>
           </ElitePanel>
 
           <CompactGuidelines className="hidden lg:flex" action={scheduleAction} />
