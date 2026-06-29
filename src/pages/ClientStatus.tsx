@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle,
@@ -8,6 +8,7 @@ import {
   Clock,
   ExternalLink,
   LogIn,
+  MessageCircle,
   RefreshCw,
   Video,
 } from 'lucide-react'
@@ -16,28 +17,107 @@ import { ptBR } from 'date-fns/locale'
 
 import {
   EliteBrand,
-  EliteGuidelines,
   EliteHeaderAction,
   EliteKicker,
   ElitePanel,
 } from '@/components/elite/ElitePrimitives'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import { cancelMeeting } from '@/services/api'
 import { useClientStore } from '@/stores/use-client-store'
 
 function ClientFlowHeader() {
   return (
-    <header className="mx-auto flex max-w-7xl items-center justify-between px-6 py-8">
-      <EliteBrand />
-      <EliteHeaderAction>
-        <LogIn className="h-6 w-6" />
+    <header className="mx-auto flex h-12 w-full max-w-[1080px] shrink-0 items-center justify-between px-4 sm:h-14 sm:px-6">
+      <EliteBrand compact className="origin-left scale-75" />
+      <EliteHeaderAction className="h-9 w-9">
+        <LogIn className="h-4 w-4" />
       </EliteHeaderAction>
     </header>
   )
 }
 
+function StatusShell({ children, narrow = false }: { children: ReactNode; narrow?: boolean }) {
+  return (
+    <section className="animate-fade-in-up flex h-dvh flex-col overflow-hidden">
+      <ClientFlowHeader />
+      <main
+        className={cn(
+          'mx-auto flex min-h-0 w-full flex-1 flex-col overflow-y-auto px-4 pb-3 pt-2 sm:px-6 sm:pb-5',
+          narrow ? 'max-w-[720px] justify-center' : 'max-w-[1080px]',
+        )}
+      >
+        {children}
+      </main>
+    </section>
+  )
+}
+
+function CompactChecklist({ action }: { action: ReactNode }) {
+  const items = [
+    'Escolha um horário sem reuniões coladas.',
+    'Remarcações precisam respeitar a antecedência mínima.',
+    'O novo horário depende da agenda do consultor.',
+  ]
+
+  return (
+    <ElitePanel className="mt-4 flex min-h-0 flex-col p-3 sm:p-4">
+      <div className="space-y-3">
+        {items.map((item, index) => (
+          <div key={item} className="grid grid-cols-[18px_1fr] gap-3">
+            <div className="relative flex justify-center">
+              {index < items.length - 1 && (
+                <span className="absolute top-3 h-[calc(100%+.75rem)] w-px bg-primary/70" />
+              )}
+              <span className="relative mt-1 h-2.5 w-2.5 rounded-full border border-primary bg-background shadow-[0_0_12px_rgba(109,217,187,.75)]" />
+            </div>
+            <p className="text-xs font-semibold leading-5 text-foreground/80">{item}</p>
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 border-t border-border pt-4">{action}</div>
+    </ElitePanel>
+  )
+}
+
+function SimpleState({
+  icon,
+  kicker,
+  title,
+  children,
+}: {
+  icon: ReactNode
+  kicker: string
+  title: string
+  children: ReactNode
+}) {
+  return (
+    <StatusShell narrow>
+      <div className="text-center">
+        <EliteKicker className="min-h-6 px-3 text-[0.62rem]">{kicker}</EliteKicker>
+        <h1 className="mt-4 font-display text-2xl font-extrabold sm:text-3xl md:text-4xl">
+          {title}
+        </h1>
+      </div>
+      <ElitePanel className="mt-4 p-4 text-center sm:p-5">
+        <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-secondary text-primary">
+          {icon}
+        </div>
+        <div className="mt-4 text-sm font-semibold leading-6 text-muted-foreground sm:text-base">
+          {children}
+        </div>
+      </ElitePanel>
+    </StatusShell>
+  )
+}
+
 function replaceToken(value: string, token: string, replacement: string) {
   return value.split(token).join(replacement)
+}
+
+function whatsappHref(phone: string | undefined) {
+  const digits = String(phone || '').replace(/\D/g, '')
+  return digits ? `https://wa.me/${digits}` : ''
 }
 
 function buildTallyUrl(client: any, program: any, firstName: string) {
@@ -100,6 +180,7 @@ export default function ClientStatus() {
     ? new Date(stats.no_show_earliest_start)
     : null
   const tallyUrl = buildTallyUrl(client, program, firstName)
+  const consultantWhatsApp = whatsappHref(consultant?.whatsapp_number)
 
   const handleRefresh = async () => {
     setFeedback('')
@@ -132,94 +213,72 @@ export default function ClientStatus() {
 
   if (stats?.booking_blocked) {
     return (
-      <section className="animate-fade-in-up min-h-screen">
-        <ClientFlowHeader />
-        <div className="mx-auto flex max-w-3xl flex-col items-center px-6 py-16 text-center">
-          <EliteKicker>{program?.name || 'Consultoria Elite'}</EliteKicker>
-          <h1 className="mt-8 font-display text-5xl font-extrabold">Agendamento indisponível</h1>
-          <ElitePanel className="mt-10 p-8">
-            <AlertTriangle className="mx-auto h-12 w-12 text-destructive" />
-            <p className="mt-6 text-lg leading-8 text-muted-foreground">
-              {stats.block_reason ||
-                'O status atual da consultoria não permite novos agendamentos.'}
-            </p>
-            {consultant?.whatsapp_number && (
-              <Button asChild size="lg" className="mt-8 w-full">
-                <a
-                  href={`https://wa.me/${consultant.whatsapp_number}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Falar com o consultor <ArrowRight className="h-5 w-5" />
-                </a>
-              </Button>
-            )}
-          </ElitePanel>
-        </div>
-      </section>
+      <SimpleState
+        icon={<AlertTriangle className="h-5 w-5 text-destructive" />}
+        kicker={program?.name || 'Consultoria Elite'}
+        title="Agendamento indisponível"
+      >
+        <p>
+          {stats.block_reason || 'O status atual da consultoria não permite novos agendamentos.'}
+        </p>
+        {consultantWhatsApp && (
+          <Button asChild size="lg" className="mt-5 h-11 w-full rounded-full font-mono text-xs">
+            <a href={consultantWhatsApp} target="_blank" rel="noreferrer">
+              Falar com o consultor <MessageCircle className="h-4 w-4" />
+            </a>
+          </Button>
+        )}
+      </SimpleState>
     )
   }
 
   if (stats?.requires_tally) {
     return (
-      <section className="animate-fade-in-up min-h-screen">
-        <ClientFlowHeader />
-        <div className="mx-auto flex max-w-3xl flex-col items-center px-6 py-16 text-center">
-          <EliteKicker>{program?.name || 'Consultoria Elite'}</EliteKicker>
-          <h1 className="mt-8 font-display text-5xl font-extrabold">Antes de agendar</h1>
-          <ElitePanel className="mt-10 p-8">
-            <p className="text-xl leading-9">
-              Responda o formulário para que o(a) consultor(a){' '}
-              <strong className="text-primary">{consultant?.name}</strong> possa se preparar para te
-              atender com contexto.
-            </p>
-            <div className="mt-8 grid gap-3">
-              <Button
-                type="button"
-                size="lg"
-                className="w-full"
-                disabled={!tallyUrl}
-                onClick={() => window.open(tallyUrl, '_blank', 'noopener,noreferrer')}
-              >
-                Responder formulário <ExternalLink className="h-5 w-5" />
-              </Button>
-              <Button variant="outline" onClick={handleRefresh} className="w-full">
-                <RefreshCw className="h-4 w-4" /> Já respondi, verificar agora
-              </Button>
-              {feedback && <p className="text-sm text-muted-foreground">{feedback}</p>}
-            </div>
-          </ElitePanel>
+      <SimpleState
+        icon={<ExternalLink className="h-5 w-5" />}
+        kicker={program?.name || 'Consultoria Elite'}
+        title="Antes de agendar"
+      >
+        <p>
+          Responda o formulário para que o(a) consultor(a){' '}
+          <strong className="text-primary">{consultant?.name}</strong> possa se preparar.
+        </p>
+        <div className="mt-5 grid gap-2 sm:grid-cols-[1fr_auto]">
+          <Button
+            type="button"
+            size="lg"
+            className="h-11 rounded-full font-mono text-xs"
+            disabled={!tallyUrl}
+            onClick={() => window.open(tallyUrl, '_blank', 'noopener,noreferrer')}
+          >
+            Responder formulário <ExternalLink className="h-4 w-4" />
+          </Button>
+          <Button variant="outline" onClick={handleRefresh} className="h-11 rounded-full px-5">
+            <RefreshCw className="h-4 w-4" />
+            Verificar
+          </Button>
         </div>
-      </section>
+        {feedback && <p className="mt-3 text-xs text-muted-foreground">{feedback}</p>}
+      </SimpleState>
     )
   }
 
   if (stats?.finalised) {
     return (
-      <section className="animate-fade-in-up min-h-screen">
-        <ClientFlowHeader />
-        <div className="mx-auto flex max-w-3xl flex-col items-center px-6 py-16 text-center">
-          <EliteKicker>{program?.name || 'Consultoria Elite'}</EliteKicker>
-          <h1 className="mt-8 font-display text-5xl font-extrabold">Consultoria finalizada</h1>
-          <ElitePanel className="mt-10 p-8">
-            <CheckCircle2 className="mx-auto h-14 w-14 text-primary" />
-            <p className="mt-6 text-lg leading-8 text-muted-foreground">
-              Você já realizou todas as consultorias previstas para este programa.
-            </p>
-            {consultant?.whatsapp_number && (
-              <Button asChild size="lg" className="mt-8 w-full">
-                <a
-                  href={`https://wa.me/${consultant.whatsapp_number}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Falar sobre upgrade <ArrowRight className="h-5 w-5" />
-                </a>
-              </Button>
-            )}
-          </ElitePanel>
-        </div>
-      </section>
+      <SimpleState
+        icon={<CheckCircle2 className="h-5 w-5" />}
+        kicker={program?.name || 'Consultoria Elite'}
+        title="Consultoria finalizada"
+      >
+        <p>Você já realizou todas as consultorias previstas para este programa.</p>
+        {consultantWhatsApp && (
+          <Button asChild size="lg" className="mt-5 h-11 w-full rounded-full font-mono text-xs">
+            <a href={consultantWhatsApp} target="_blank" rel="noreferrer">
+              Falar sobre upgrade <ArrowRight className="h-4 w-4" />
+            </a>
+          </Button>
+        )}
+      </SimpleState>
     )
   }
 
@@ -228,133 +287,136 @@ export default function ClientStatus() {
     const canChange = differenceInHours(meetDate, new Date()) >= minRescheduleHours
 
     return (
-      <section className="animate-fade-in-up min-h-screen">
-        <ClientFlowHeader />
-        <div className="mx-auto max-w-4xl px-6 py-16">
-          <div className="text-center">
-            <EliteKicker>{program?.name || 'Consultoria Elite'}</EliteKicker>
-            <h1 className="mt-8 font-display text-5xl font-extrabold">
-              Olá, <span className="text-primary">{firstName}</span>
-            </h1>
-            <p className="mt-4 text-xl text-muted-foreground">
-              Seu agendamento já foi realizado com o(a) {consultant?.name}.
-            </p>
-          </div>
-
-          <ElitePanel className="mt-10 overflow-hidden">
-            <div className="border-b border-border bg-primary/10 px-6 py-5">
-              <h2 className="flex items-center gap-3 font-display text-2xl font-bold">
-                <Video className="h-6 w-6 text-primary" />
-                {upcomingMeeting.title || 'Reunião agendada'}
-              </h2>
-            </div>
-            <div className="space-y-8 p-6 md:p-8">
-              <div className="grid gap-5 md:grid-cols-2">
-                <div className="rounded-md border border-border bg-secondary p-5">
-                  <div className="flex items-center text-sm text-muted-foreground">
-                    <Calendar className="mr-2 h-4 w-4" /> Data
-                  </div>
-                  <p className="mt-3 font-display text-xl font-bold">
-                    {format(meetDate, "dd 'de' MMMM", { locale: ptBR })}
-                  </p>
-                  <p className="mt-1 text-sm capitalize text-muted-foreground">
-                    {format(meetDate, 'EEEE', { locale: ptBR })}
-                  </p>
-                </div>
-                <div className="rounded-md border border-border bg-secondary p-5">
-                  <div className="flex items-center text-sm text-muted-foreground">
-                    <Clock className="mr-2 h-4 w-4" /> Horário
-                  </div>
-                  <p className="mt-3 font-display text-xl font-bold">
-                    {format(meetDate, 'HH:mm')} -{' '}
-                    {format(new Date(upcomingMeeting.end_time), 'HH:mm')}
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid gap-3 md:grid-cols-2">
-                {upcomingMeeting.meet_link && (
-                  <Button asChild variant="secondary" className="w-full">
-                    <a href={upcomingMeeting.meet_link} target="_blank" rel="noreferrer">
-                      Acessar Google Meet
-                    </a>
-                  </Button>
-                )}
-                {upcomingMeeting.google_html_link && (
-                  <Button asChild variant="outline" className="w-full">
-                    <a href={upcomingMeeting.google_html_link} target="_blank" rel="noreferrer">
-                      Ver evento no Google Calendar
-                    </a>
-                  </Button>
-                )}
-              </div>
-
-              {!canChange && (
-                <p className="rounded-md border border-[#fbbf24]/30 bg-[#fbbf24]/10 p-4 text-center text-sm text-[#fbbf24]">
-                  Cancelamentos exigem no mínimo {minRescheduleHours}h de antecedência. Você ainda
-                  pode remarcar, mas o novo horário precisa ser {lateRescheduleText}.
-                </p>
-              )}
-              {feedback && <p className="text-center text-sm text-muted-foreground">{feedback}</p>}
-
-              <div className="grid gap-3 border-t border-border pt-6 md:grid-cols-2">
-                <Button
-                  variant="outline"
-                  onClick={() => navigate(`/schedule?reschedule=${upcomingMeeting.id}`)}
-                  disabled={cancelling}
-                >
-                  Remarcar
-                </Button>
-                <Button
-                  variant="destructive"
-                  onClick={handleCancel}
-                  disabled={!canChange || cancelling}
-                >
-                  Cancelar
-                </Button>
-              </div>
-            </div>
-          </ElitePanel>
+      <StatusShell>
+        <div className="shrink-0 text-center">
+          <EliteKicker className="min-h-6 px-3 text-[0.62rem] max-[720px]:hidden">
+            {program?.name || 'Consultoria Elite'}
+          </EliteKicker>
+          <h1 className="mt-2 font-display text-2xl font-extrabold sm:mt-3 sm:text-3xl md:text-4xl">
+            Olá, <span className="text-primary">{firstName}</span>
+          </h1>
+          <p className="mt-2 text-sm font-semibold leading-6 text-muted-foreground max-[720px]:hidden">
+            Seu agendamento já foi realizado com o(a) {consultant?.name}.
+          </p>
         </div>
-      </section>
+
+        <ElitePanel className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div className="shrink-0 border-b border-border bg-primary/10 px-4 py-3 sm:px-5">
+            <h2 className="flex items-center gap-2 font-display text-lg font-bold">
+              <Video className="h-5 w-5 text-primary" />
+              {upcomingMeeting.title || 'Reunião agendada'}
+            </h2>
+          </div>
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4 sm:p-5">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <div className="flex items-center text-xs font-semibold text-muted-foreground">
+                  <Calendar className="mr-2 h-4 w-4" /> Data
+                </div>
+                <p className="mt-2 font-display text-xl font-bold">
+                  {format(meetDate, "dd 'de' MMMM", { locale: ptBR })}
+                </p>
+                <p className="mt-1 text-xs capitalize text-muted-foreground">
+                  {format(meetDate, 'EEEE', { locale: ptBR })}
+                </p>
+              </div>
+              <div className="border-t border-border pt-4 sm:border-l sm:border-t-0 sm:pl-5 sm:pt-0">
+                <div className="flex items-center text-xs font-semibold text-muted-foreground">
+                  <Clock className="mr-2 h-4 w-4" /> Horário
+                </div>
+                <p className="mt-2 font-display text-xl font-bold">
+                  {format(meetDate, 'HH:mm')} -{' '}
+                  {format(new Date(upcomingMeeting.end_time), 'HH:mm')}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              {upcomingMeeting.meet_link && (
+                <Button asChild variant="secondary" className="h-10 rounded-full">
+                  <a href={upcomingMeeting.meet_link} target="_blank" rel="noreferrer">
+                    Acessar Google Meet
+                  </a>
+                </Button>
+              )}
+              {upcomingMeeting.google_html_link && (
+                <Button asChild variant="outline" className="h-10 rounded-full">
+                  <a href={upcomingMeeting.google_html_link} target="_blank" rel="noreferrer">
+                    Ver evento
+                  </a>
+                </Button>
+              )}
+            </div>
+
+            {!canChange && (
+              <p className="mt-4 rounded-md border border-[#fbbf24]/30 bg-[#fbbf24]/10 p-3 text-center text-xs leading-5 text-[#fbbf24]">
+                Cancelamentos exigem no mínimo {minRescheduleHours}h de antecedência. Você ainda
+                pode remarcar, mas o novo horário precisa ser {lateRescheduleText}.
+              </p>
+            )}
+            {feedback && (
+              <p className="mt-3 text-center text-xs text-muted-foreground">{feedback}</p>
+            )}
+
+            <div className="mt-auto grid gap-2 border-t border-border pt-4 sm:grid-cols-2">
+              <Button
+                variant="outline"
+                className="h-11 rounded-full"
+                onClick={() => navigate(`/schedule?reschedule=${upcomingMeeting.id}`)}
+                disabled={cancelling}
+              >
+                Remarcar
+              </Button>
+              <Button
+                variant="destructive"
+                className="h-11 rounded-full"
+                onClick={handleCancel}
+                disabled={!canChange || cancelling}
+              >
+                {cancelling ? 'Cancelando...' : 'Cancelar'}
+              </Button>
+            </div>
+          </div>
+        </ElitePanel>
+      </StatusShell>
     )
   }
 
   return (
-    <section className="animate-fade-in-up min-h-screen">
-      <ClientFlowHeader />
-      <div className="mx-auto max-w-7xl px-6 py-20">
-        <EliteKicker>Sessão de consultoria</EliteKicker>
-        <h1 className="mt-8 max-w-6xl font-display text-5xl font-extrabold leading-tight md:text-7xl">
+    <StatusShell>
+      <div className="shrink-0">
+        <EliteKicker className="min-h-6 px-3 text-[0.62rem] max-[720px]:hidden">
+          Sessão de consultoria
+        </EliteKicker>
+        <h1 className="mt-2 max-w-4xl font-display text-2xl font-extrabold leading-tight sm:mt-3 sm:text-3xl md:text-4xl">
           Bem-vindo, <span className="text-primary">{firstName}</span>!
         </h1>
-        <p className="mt-8 max-w-5xl text-2xl font-semibold leading-10 text-muted-foreground">
+        <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-muted-foreground max-[720px]:hidden md:text-base">
           Vamos agendar a sua reunião? Escolha o melhor horário com o seu consultor{' '}
           <span className="text-primary">{consultant?.name}</span>.
         </p>
-
-        {stats?.stage_rules?.has_no_show &&
-          noShowEarliestDate &&
-          !Number.isNaN(noShowEarliestDate.getTime()) && (
-            <ElitePanel className="mt-10 max-w-4xl border-[#fbbf24]/30 p-5 text-[#fbbf24]">
-              No-show registrado: essa reunião não consumiu saldo. Você pode reagendar a partir de{' '}
-              {format(noShowEarliestDate, "dd 'de' MMMM", { locale: ptBR })}.
-            </ElitePanel>
-          )}
-
-        <EliteGuidelines
-          className="mx-auto mt-24 max-w-5xl"
-          action={
-            <Button
-              size="lg"
-              className="h-14 w-full font-mono"
-              onClick={() => navigate('/schedule')}
-            >
-              Iniciar Agendamento <ArrowRight className="h-5 w-5" />
-            </Button>
-          }
-        />
       </div>
-    </section>
+
+      {stats?.stage_rules?.has_no_show &&
+        noShowEarliestDate &&
+        !Number.isNaN(noShowEarliestDate.getTime()) && (
+          <ElitePanel className="mt-3 shrink-0 border-[#fbbf24]/30 p-3 text-sm text-[#fbbf24]">
+            No-show registrado: essa reunião não consumiu saldo. Você pode reagendar a partir de{' '}
+            {format(noShowEarliestDate, "dd 'de' MMMM", { locale: ptBR })}.
+          </ElitePanel>
+        )}
+
+      <CompactChecklist
+        action={
+          <Button
+            size="lg"
+            className="h-11 w-full rounded-full font-mono text-xs"
+            onClick={() => navigate('/schedule')}
+          >
+            Iniciar Agendamento <ArrowRight className="h-5 w-5" />
+          </Button>
+        }
+      />
+    </StatusShell>
   )
 }
