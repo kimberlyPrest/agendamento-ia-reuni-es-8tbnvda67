@@ -94,7 +94,11 @@ export default function ConsultantSettings() {
         const googleStatus = await getGoogleCalendarStatus(data.consultant.id)
         setStatus(googleStatus)
         setCalendars(googleStatus.calendars || [])
-      } catch (_) {
+      } catch (err: any) {
+        setStatus({
+          google_connected: false,
+          message: err.message || 'Não foi possível validar a agenda Google.',
+        })
         setCalendars([])
       }
     }
@@ -269,7 +273,7 @@ export default function ConsultantSettings() {
 
   if (!consultant) return <div className="text-muted-foreground">Carregando configurações...</div>
 
-  const connected = status ? status.google_connected : consultant.google_sync_status === 'connected'
+  const connected = Boolean(status?.google_connected)
 
   return (
     <form onSubmit={save} className="space-y-6 animate-fade-in-up">
