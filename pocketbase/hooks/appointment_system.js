@@ -93,14 +93,25 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
   }
   const googleConnected = (consultant) =>
     Boolean(googleConfigReady() && hasUsableGoogleToken(consultant))
-  const googleConnectionMessage = (consultant) => {
-    if (!googleConfigReady())
-      return 'Configure GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET no ambiente.'
+  const googleConnectionStatus = (consultant) => {
+    if (!googleConfigReady()) return 'missing_config'
+    const hasToken = hasUsableGoogleToken(consultant)
     const status = textValue(consultant, 'google_sync_status', 'not_connected')
-    if (status === 'missing_refresh_token' || !hasUsableGoogleToken(consultant))
+    if (!hasToken && status === 'missing_refresh_token') return status
+    if (status === 'token_error' || status === 'calendar_error') return status
+    if (!hasToken) return 'not_connected'
+    return status || 'not_connected'
+  }
+  const googleConnectionMessage = (consultant) => {
+    const status = googleConnectionStatus(consultant)
+    if (status === 'missing_config')
+      return 'Configure GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET no ambiente.'
+    if (status === 'not_connected') return 'Agenda Google ainda não conectada por OAuth.'
+    if (status === 'missing_refresh_token')
       return 'Google autorizou, mas não enviou refresh token. Revogue o acesso do app na sua conta Google e conecte novamente.'
     if (status === 'token_error')
       return 'O refresh token do Google foi recusado. Revogue o acesso do app na sua conta Google e conecte novamente.'
+    if (status === 'calendar_error') return 'Não foi possível consultar a agenda Google.'
     return 'Agenda Google do consultor ainda não está conectada por OAuth.'
   }
   const uniqueValues = (items) => {
@@ -510,7 +521,7 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
         program = $app.findRecordById('programs', client.get('program_id'))
       }
       if (!googleConnected(consultant)) {
-        const status = textValue(consultant, 'google_sync_status', 'not_connected')
+        const status = googleConnectionStatus(consultant)
         return e.json(200, {
           slots: [],
           google_connected: false,
@@ -597,7 +608,7 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
     try {
       const consultant = $app.findRecordById('consultants', consultantId)
       if (!canManageConsultant(consultant)) return forbidden()
-      let status = textValue(consultant, 'google_sync_status', 'not_connected')
+      let status = googleConnectionStatus(consultant)
       if (!googleConfigReady()) {
         return e.json(200, {
           google_connected: false,
@@ -617,12 +628,7 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
           connected_email: consultant.get('google_connected_email') || '',
           calendar_id: writableGoogleCalendarId(consultant),
           configured_calendar_ids: configuredGoogleCalendarIds(consultant),
-          message:
-            status === 'missing_refresh_token'
-              ? 'Google autorizou, mas não enviou refresh token. Revogue o acesso do app na sua conta Google e conecte novamente.'
-              : status === 'token_error'
-                ? 'O refresh token do Google foi recusado. Revogue o acesso do app na sua conta Google e conecte novamente.'
-                : 'Agenda Google do consultor ainda não está conectada por OAuth.',
+          message: googleConnectionMessage(consultant),
         })
       }
       const accessToken = refreshGoogleAccessToken(consultant, true)
@@ -885,14 +891,25 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
   const hasUsableGoogleToken = (consultant) => Boolean(consultant.get('google_refresh_token'))
   const googleConnected = (consultant) =>
     Boolean(googleConfigReady() && hasUsableGoogleToken(consultant))
-  const googleConnectionMessage = (consultant) => {
-    if (!googleConfigReady())
-      return 'Configure GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET no ambiente.'
+  const googleConnectionStatus = (consultant) => {
+    if (!googleConfigReady()) return 'missing_config'
+    const hasToken = hasUsableGoogleToken(consultant)
     const status = textValue(consultant, 'google_sync_status', 'not_connected')
-    if (status === 'missing_refresh_token' || !hasUsableGoogleToken(consultant))
+    if (!hasToken && status === 'missing_refresh_token') return status
+    if (status === 'token_error' || status === 'calendar_error') return status
+    if (!hasToken) return 'not_connected'
+    return status || 'not_connected'
+  }
+  const googleConnectionMessage = (consultant) => {
+    const status = googleConnectionStatus(consultant)
+    if (status === 'missing_config')
+      return 'Configure GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET no ambiente.'
+    if (status === 'not_connected') return 'Agenda Google ainda não conectada por OAuth.'
+    if (status === 'missing_refresh_token')
       return 'Google autorizou, mas não enviou refresh token. Revogue o acesso do app na sua conta Google e conecte novamente.'
     if (status === 'token_error')
       return 'O refresh token do Google foi recusado. Revogue o acesso do app na sua conta Google e conecte novamente.'
+    if (status === 'calendar_error') return 'Não foi possível consultar a agenda Google.'
     return 'Agenda Google do consultor ainda não está conectada por OAuth.'
   }
   const uniqueValues = (items) => {

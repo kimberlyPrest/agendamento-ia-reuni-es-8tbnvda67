@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   addMonths,
@@ -21,11 +21,12 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Info,
+  MessageCircle,
 } from 'lucide-react'
 
 import {
   EliteBrand,
-  EliteGuidelines,
   EliteHeaderAction,
   EliteKicker,
   ElitePanel,
@@ -43,6 +44,19 @@ type Slot = {
 }
 
 const weekdays = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB']
+const clientCalendarError =
+  'Não foi possível carregar os horários agora. Fale com seu consultor para continuar.'
+
+function isTechnicalCalendarError(message = '') {
+  return /google|oauth|refresh token|calendar|agenda|GOOGLE_CLIENT|GOOGLE_SECRET|token/i.test(
+    message,
+  )
+}
+
+function whatsappHref(phone: string | undefined, text: string) {
+  const digits = String(phone || '').replace(/\D/g, '')
+  return digits ? `https://wa.me/${digits}?text=${encodeURIComponent(text)}` : ''
+}
 
 function sameOrBefore(day: Date, maxDate: Date) {
   const normalized = new Date(day)
@@ -82,10 +96,10 @@ function AvailabilityCalendar({
   }, [visibleMonth])
 
   return (
-    <div className="space-y-7">
+    <div className="space-y-3">
       <div className="flex items-center justify-between gap-4">
-        <h2 className="flex items-center gap-3 font-display text-2xl font-extrabold">
-          <span className="h-2.5 w-2.5 rounded-full bg-primary shadow-[0_0_16px_rgba(109,217,187,.9)]" />
+        <h2 className="flex items-center gap-2 font-display text-lg font-extrabold">
+          <span className="h-2 w-2 rounded-full bg-primary shadow-[0_0_16px_rgba(109,217,187,.9)]" />
           Disponibilidade
         </h2>
         <div className="flex items-center gap-4">
@@ -93,18 +107,20 @@ function AvailabilityCalendar({
             type="button"
             variant="outline"
             size="icon"
+            className="h-8 w-8 rounded"
             aria-label="Mês anterior"
             onClick={() => onMonthChange(subMonths(visibleMonth, 1))}
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <p className="w-28 text-center font-mono text-sm font-bold uppercase leading-5">
+          <p className="w-24 text-center font-mono text-[0.68rem] font-bold uppercase leading-4">
             {format(visibleMonth, 'MMMM yyyy', { locale: ptBR })}
           </p>
           <Button
             type="button"
             variant="outline"
             size="icon"
+            className="h-8 w-8 rounded"
             aria-label="Próximo mês"
             onClick={() => onMonthChange(addMonths(visibleMonth, 1))}
           >
@@ -113,11 +129,11 @@ function AvailabilityCalendar({
         </div>
       </div>
 
-      <div className="grid grid-cols-7 gap-3">
+      <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
         {weekdays.map((day) => (
           <div
             key={day}
-            className="py-2 text-center font-mono text-sm font-bold text-muted-foreground"
+            className="py-0.5 text-center font-mono text-[0.62rem] font-bold text-muted-foreground sm:py-1"
           >
             {day}
           </div>
@@ -134,23 +150,70 @@ function AvailabilityCalendar({
               disabled={disabled}
               onClick={() => onSelect(day)}
               className={cn(
-                'relative flex aspect-square min-h-16 items-center justify-center rounded-md border border-border bg-card text-xl font-bold text-muted-foreground transition-all duration-150 md:min-h-24',
-                'enabled:hover:border-primary enabled:hover:text-primary enabled:hover:shadow-[0_0_0_1px_rgba(109,217,187,.55),0_20px_40px_-28px_rgba(109,217,187,.85)]',
+                'relative flex h-8 items-center justify-center rounded border border-border bg-secondary text-xs font-bold text-muted-foreground transition-all duration-150 sm:h-10 sm:text-sm md:h-12 md:text-base',
+                'enabled:hover:border-[#60a5fa] enabled:hover:bg-[#60a5fa]/15 enabled:hover:text-[#93c5fd] enabled:hover:shadow-[0_0_16px_rgba(96,165,250,.28)]',
                 selectedDay &&
-                  'border-primary bg-primary text-primary-foreground shadow-[0_20px_48px_-20px_rgba(109,217,187,.85)] hover:text-primary-foreground',
+                  'border-primary bg-primary text-primary-foreground shadow-[0_0_25px_rgba(109,217,187,.45)] hover:border-primary hover:bg-primary hover:text-primary-foreground',
                 disabled && 'cursor-not-allowed opacity-25',
                 outsideMonth && 'invisible',
               )}
             >
               {format(day, 'd')}
-              {!selectedDay && !disabled && (
-                <span className="absolute bottom-2 h-1 w-1 rounded-full bg-primary opacity-0 transition-opacity group-hover:opacity-100" />
-              )}
             </button>
           )
         })}
       </div>
     </div>
+  )
+}
+
+function CompactGuidelines({ action, className }: { action: ReactNode; className?: string }) {
+  const items = [
+    'Escolha um dia e horário tranquilo, sem reuniões coladas e sem correria.',
+    'Se precisar remarcar, faça isso com no mínimo 24h de antecedência.',
+    'O novo horário depende da agenda do consultor e pode entrar no fim da fila.',
+  ]
+
+  return (
+    <ElitePanel className={cn('flex h-full min-h-0 flex-col p-4', className)}>
+      <h2 className="flex items-center gap-2 font-display text-lg font-extrabold">
+        <Info className="h-4 w-4 text-primary" />
+        Diretrizes
+      </h2>
+      <div className="mt-4 space-y-4">
+        {items.map((item, index) => (
+          <div key={item} className="grid grid-cols-[18px_1fr] gap-3">
+            <div className="relative flex justify-center">
+              {index < items.length - 1 && (
+                <span
+                  className={cn(
+                    'absolute top-3 h-[calc(100%+1rem)] w-px',
+                    index < 2 ? 'bg-primary' : 'bg-border',
+                  )}
+                />
+              )}
+              <span
+                className={cn(
+                  'relative mt-1 h-2.5 w-2.5 rounded-full border bg-background',
+                  index < 2
+                    ? 'border-primary shadow-[0_0_12px_rgba(109,217,187,.8)]'
+                    : 'border-muted-foreground/40',
+                )}
+              />
+            </div>
+            <p
+              className={cn(
+                'text-xs font-semibold leading-5',
+                index < 2 ? 'text-foreground/80' : 'text-muted-foreground/55',
+              )}
+            >
+              {item}
+            </p>
+          </div>
+        ))}
+      </div>
+      <div className="mt-auto border-t border-border pt-4">{action}</div>
+    </ElitePanel>
   )
 }
 
@@ -188,6 +251,7 @@ export default function ClientSchedule() {
   const [loading, setLoading] = useState(false)
   const [booking, setBooking] = useState(false)
   const [error, setError] = useState('')
+  const [needsConsultantSupport, setNeedsConsultantSupport] = useState(false)
 
   useEffect(() => {
     if (!client) navigate('/')
@@ -208,6 +272,7 @@ export default function ClientSchedule() {
     setLoading(true)
     setSelectedSlot(null)
     setError('')
+    setNeedsConsultantSupport(false)
     try {
       const dateStr = format(selectedDate, 'yyyy-MM-dd')
       const data = await getAvailableSlots(
@@ -225,10 +290,16 @@ export default function ClientSchedule() {
         }
       })
       setSlots(nextSlots)
-      if (data.setup_required) setError(data.message || 'Agenda Google ainda não conectada.')
+      if (data.setup_required) {
+        setSlots([])
+        setNeedsConsultantSupport(true)
+        setError(clientCalendarError)
+      }
     } catch (err: any) {
       setSlots([])
-      setError(err.message || 'Não foi possível buscar horários.')
+      const message = err.message || 'Não foi possível buscar horários.'
+      setNeedsConsultantSupport(isTechnicalCalendarError(message))
+      setError(isTechnicalCalendarError(message) ? clientCalendarError : message)
     } finally {
       setLoading(false)
     }
@@ -238,6 +309,7 @@ export default function ClientSchedule() {
     if (!selectedSlot || !client) return
     setBooking(true)
     setError('')
+    setNeedsConsultantSupport(false)
     try {
       let bookedMeeting: any = null
       if (isRescheduling && rescheduleId) {
@@ -257,8 +329,11 @@ export default function ClientSchedule() {
         state: { meeting: refreshed?.upcomingMeeting || bookedMeeting },
       })
     } catch (err: any) {
-      setError(err.message || 'Erro ao agendar. Tente outro horário.')
-      if (date) fetchSlots(date)
+      const message = err.message || 'Erro ao agendar. Tente outro horário.'
+      const technicalCalendarError = isTechnicalCalendarError(message)
+      setNeedsConsultantSupport(technicalCalendarError)
+      setError(technicalCalendarError ? clientCalendarError : message)
+      if (!technicalCalendarError && date) fetchSlots(date)
     } finally {
       setBooking(false)
     }
@@ -275,32 +350,62 @@ export default function ClientSchedule() {
     ? format(date, "d 'de' MMMM", { locale: ptBR })
     : 'Selecione uma data'
   const shortDateLabel = date ? format(date, 'd MMM', { locale: ptBR }).toUpperCase() : ''
+  const supportHref = whatsappHref(
+    consultant?.whatsapp_number,
+    `Olá! Não consegui carregar os horários para agendar minha reunião do programa ${program?.name || ''}. Pode me ajudar?`,
+  )
+  const scheduleAction = (
+    <div className="space-y-3">
+      <p className="text-center text-xs leading-5 text-muted-foreground">
+        {selectedSlot
+          ? `${selectedDateLabel} às ${selectedSlot.time}`
+          : 'Selecione um dia e horário para continuar.'}
+      </p>
+      <Button
+        size="lg"
+        className="h-11 w-full rounded-full font-mono text-xs"
+        disabled={!selectedSlot || booking}
+        onClick={handleBook}
+      >
+        {booking
+          ? 'Salvando...'
+          : isRescheduling
+            ? 'Confirmar Remarcação'
+            : 'Confirmar Agendamento'}
+        {!booking && <ArrowRight className="h-5 w-5" />}
+      </Button>
+    </div>
+  )
 
   return (
-    <section className="animate-fade-in-up min-h-screen">
-      <header className="mx-auto flex max-w-7xl items-center justify-between px-6 py-8">
-        <EliteBrand />
+    <section className="animate-fade-in-up flex h-dvh flex-col overflow-hidden">
+      <header className="mx-auto flex h-12 w-full max-w-[1080px] shrink-0 items-center justify-between px-4 sm:h-14 sm:px-6">
+        <EliteBrand compact className="origin-left scale-75" />
         <button type="button" aria-label="Voltar" onClick={() => navigate('/status')}>
-          <EliteHeaderAction>
-            <ArrowLeft className="h-6 w-6" />
+          <EliteHeaderAction className="h-9 w-9">
+            <ArrowLeft className="h-4 w-4" />
           </EliteHeaderAction>
         </button>
       </header>
 
-      <div className="mx-auto max-w-7xl px-6 py-16">
-        <EliteKicker>Sessão de consultoria</EliteKicker>
-        <h1 className="mt-8 max-w-6xl font-display text-5xl font-extrabold leading-tight md:text-7xl">
-          {isRescheduling ? 'Escolha o novo horário' : 'Bem-vindo, '}
-          {!isRescheduling && <span className="text-primary">{firstName}</span>}
-          {!isRescheduling && '!'}
-        </h1>
-        <p className="mt-8 max-w-5xl text-2xl font-semibold leading-10 text-muted-foreground">
-          Vamos agendar a sua reunião? Escolha o melhor horário com o seu consultor{' '}
-          <span className="text-primary">{consultant?.name}</span>.
-        </p>
+      <div className="mx-auto flex min-h-0 w-full max-w-[1080px] flex-1 flex-col px-4 pb-3 pt-2 sm:px-6 sm:pb-5 sm:pt-3">
+        <div className="shrink-0">
+          <EliteKicker className="min-h-6 px-3 text-[0.62rem] max-[720px]:hidden">
+            Sessão de consultoria
+          </EliteKicker>
+          <h1 className="mt-2 max-w-4xl font-display text-2xl font-extrabold leading-tight sm:mt-3 sm:text-3xl md:text-4xl">
+            {isRescheduling ? 'Escolha o novo horário' : 'Bem-vindo, '}
+            {!isRescheduling && <span className="text-primary">{firstName}</span>}
+            {!isRescheduling && '!'}
+          </h1>
+          <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-muted-foreground max-[720px]:hidden md:text-base">
+            Vamos agendar a sua reunião? Escolha o melhor horário com o seu consultor{' '}
+            <span className="text-primary">{consultant?.name}</span>.
+          </p>
+        </div>
 
         {isLateReschedule && (
-          <ElitePanel className="mt-10 flex max-w-4xl gap-3 border-[#fbbf24]/30 p-4 text-[#fbbf24]">
+          <ElitePanel className="mt-3 flex shrink-0 max-w-4xl gap-3 border-[#fbbf24]/30 p-3 text-sm text-[#fbbf24]">
             <AlertTriangle className="mt-1 h-5 w-5 shrink-0" />
             <span>
               Como a remarcação passou do prazo mínimo, os novos horários aparecem a partir de{' '}
@@ -309,8 +414,8 @@ export default function ClientSchedule() {
           </ElitePanel>
         )}
 
-        <div className="mt-24 grid gap-8 lg:grid-cols-[1fr_0.48fr]">
-          <ElitePanel className="p-6 md:p-8">
+        <div className="mt-3 grid min-h-0 flex-1 gap-4 sm:mt-5 lg:grid-cols-[minmax(0,1fr)_300px]">
+          <ElitePanel className="flex min-h-0 flex-col p-3 sm:p-4 md:p-5">
             <AvailabilityCalendar
               selected={date}
               visibleMonth={visibleMonth}
@@ -323,19 +428,33 @@ export default function ClientSchedule() {
               onMonthChange={setVisibleMonth}
             />
 
-            <div className="mt-10 border-t border-border pt-8">
-              <div className="flex items-center gap-2 font-mono text-sm font-bold uppercase text-muted-foreground">
+            <div className="mt-4 border-t border-border pt-3">
+              <div className="flex items-center gap-2 font-mono text-[0.68rem] font-bold uppercase text-muted-foreground">
                 <Clock className="h-4 w-4" />
                 Horários disponíveis: {shortDateLabel}
               </div>
 
-              <div className="mt-5 flex flex-wrap gap-3">
+              <div className="mt-3 flex flex-wrap gap-2">
                 {loading ? (
                   <p className="text-sm text-muted-foreground">Buscando horários...</p>
                 ) : error ? (
-                  <div className="flex w-full gap-3 rounded-md border border-[#fbbf24]/30 bg-[#fbbf24]/10 p-4 text-sm text-[#fbbf24]">
-                    <AlertTriangle className="h-5 w-5 shrink-0" />
-                    <span>{error}</span>
+                  <div className="flex w-full flex-col gap-3 rounded-md border border-[#fbbf24]/30 bg-[#fbbf24]/10 p-3 text-sm text-[#fbbf24] sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex gap-3">
+                      <AlertTriangle className="h-5 w-5 shrink-0" />
+                      <span>{error}</span>
+                    </div>
+                    {needsConsultantSupport && supportHref && (
+                      <Button
+                        asChild
+                        size="sm"
+                        variant="outline"
+                        className="h-9 shrink-0 border-[#fbbf24]/40 text-[#fbbf24] hover:bg-[#fbbf24]/10"
+                      >
+                        <a href={supportHref} target="_blank" rel="noreferrer">
+                          WhatsApp <MessageCircle className="h-4 w-4" />
+                        </a>
+                      </Button>
+                    )}
                   </div>
                 ) : slots.length === 0 ? (
                   <p className="text-sm text-muted-foreground">Sem horários disponíveis</p>
@@ -346,7 +465,7 @@ export default function ClientSchedule() {
                       type="button"
                       variant={selectedSlot?.start_time === slot.start_time ? 'default' : 'outline'}
                       className={cn(
-                        'h-11 min-w-24 font-mono',
+                        'h-9 min-w-20 rounded-full px-4 font-mono text-xs',
                         selectedSlot?.start_time === slot.start_time &&
                           'bg-transparent text-primary ring-1 ring-primary hover:bg-primary/10',
                       )}
@@ -358,32 +477,10 @@ export default function ClientSchedule() {
                 )}
               </div>
             </div>
+            <div className="mt-auto border-t border-border pt-3 lg:hidden">{scheduleAction}</div>
           </ElitePanel>
 
-          <EliteGuidelines
-            action={
-              <div className="space-y-4">
-                <p className="text-center text-sm text-muted-foreground">
-                  {selectedSlot
-                    ? `${selectedDateLabel} às ${selectedSlot.time}`
-                    : 'Selecione um dia e horário para continuar.'}
-                </p>
-                <Button
-                  size="lg"
-                  className="h-14 w-full font-mono"
-                  disabled={!selectedSlot || booking}
-                  onClick={handleBook}
-                >
-                  {booking
-                    ? 'Salvando...'
-                    : isRescheduling
-                      ? 'Confirmar Remarcação'
-                      : 'Confirmar Agendamento'}
-                  {!booking && <ArrowRight className="h-5 w-5" />}
-                </Button>
-              </div>
-            }
-          />
+          <CompactGuidelines className="hidden lg:flex" action={scheduleAction} />
         </div>
       </div>
     </section>
