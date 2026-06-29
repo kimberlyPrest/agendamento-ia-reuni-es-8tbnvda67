@@ -8,7 +8,12 @@ interface ClientContextType {
   stats: any | null
   setClientData: (client: any, upcoming: any, stats?: any, lastMeeting?: any) => void
   clear: () => void
-  refreshClient: () => Promise<void>
+  refreshClient: () => Promise<{
+    client: any
+    upcomingMeeting: any | null
+    stats: any | null
+    lastMeeting: any | null
+  } | null>
 }
 
 const ClientContext = createContext<ClientContextType | undefined>(undefined)
@@ -40,9 +45,21 @@ export function ClientStoreProvider({ children }: { children: ReactNode }) {
   }
 
   const refreshClient = async () => {
-    if (!client?.email) return
+    if (!client?.email) return null
     const data = await authClientByEmail(client.email)
-    setClientData(data.client, data.upcoming || data.upcomingMeeting, data.stats, data.lastMeeting)
+    const refreshed = {
+      client: data.client,
+      upcomingMeeting: data.upcoming || data.upcomingMeeting || null,
+      stats: data.stats || null,
+      lastMeeting: data.lastMeeting || null,
+    }
+    setClientData(
+      refreshed.client,
+      refreshed.upcomingMeeting,
+      refreshed.stats,
+      refreshed.lastMeeting,
+    )
+    return refreshed
   }
 
   return React.createElement(

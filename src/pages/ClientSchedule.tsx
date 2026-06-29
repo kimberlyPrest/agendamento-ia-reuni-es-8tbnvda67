@@ -239,18 +239,23 @@ export default function ClientSchedule() {
     setBooking(true)
     setError('')
     try {
+      let bookedMeeting: any = null
       if (isRescheduling && rescheduleId) {
-        await rescheduleMeeting(
+        const data = await rescheduleMeeting(
           rescheduleId,
           client.id,
           selectedSlot.start_time,
           selectedSlot.end_time,
         )
+        bookedMeeting = data.meeting || null
       } else {
-        await bookMeeting(client.id, selectedSlot.start_time, selectedSlot.end_time)
+        const data = await bookMeeting(client.id, selectedSlot.start_time, selectedSlot.end_time)
+        bookedMeeting = data.meeting || null
       }
-      await refreshClient()
-      navigate('/confirmation')
+      const refreshed = await refreshClient()
+      navigate('/confirmation', {
+        state: { meeting: refreshed?.upcomingMeeting || bookedMeeting },
+      })
     } catch (err: any) {
       setError(err.message || 'Erro ao agendar. Tente outro horário.')
       if (date) fetchSlots(date)

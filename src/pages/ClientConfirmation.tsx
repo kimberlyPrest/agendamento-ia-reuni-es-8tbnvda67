@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { Calendar, CalendarPlus, Check, MessageCircle, Video } from 'lucide-react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -11,16 +11,18 @@ import { useClientStore } from '@/stores/use-client-store'
 export default function ClientConfirmation() {
   const { client, upcomingMeeting } = useClientStore()
   const navigate = useNavigate()
+  const location = useLocation()
+  const confirmedMeeting = upcomingMeeting || location.state?.meeting || null
 
   useEffect(() => {
-    if (!client || !upcomingMeeting) navigate('/status')
-  }, [client, upcomingMeeting, navigate])
+    if (!client || !confirmedMeeting) navigate('/status')
+  }, [client, confirmedMeeting, navigate])
 
-  if (!client || !upcomingMeeting) return null
+  if (!client || !confirmedMeeting) return null
 
-  const meetDate = new Date(upcomingMeeting.start_time)
-  const consultant = client.expand?.consultant_id || upcomingMeeting.expand?.consultant_id
-  const program = client.expand?.program_id || upcomingMeeting.expand?.program_id
+  const meetDate = new Date(confirmedMeeting.start_time)
+  const consultant = client.expand?.consultant_id || confirmedMeeting.expand?.consultant_id
+  const program = client.expand?.program_id || confirmedMeeting.expand?.program_id
   const whatsappText = encodeURIComponent(
     `Olá! Agendei minha reunião do programa ${program?.name || ''} para ${format(meetDate, 'dd/MM/yyyy')} às ${format(meetDate, 'HH:mm')}.`,
   )
@@ -66,9 +68,9 @@ export default function ClientConfirmation() {
         </ElitePanel>
 
         <div className="mt-14 grid w-full max-w-2xl gap-4 md:grid-cols-2">
-          {upcomingMeeting.google_html_link && (
+          {confirmedMeeting.google_html_link && (
             <Button asChild size="lg" className="h-14 font-mono">
-              <a href={upcomingMeeting.google_html_link} target="_blank" rel="noreferrer">
+              <a href={confirmedMeeting.google_html_link} target="_blank" rel="noreferrer">
                 Ver na agenda <CalendarPlus className="h-5 w-5" />
               </a>
             </Button>
@@ -84,14 +86,14 @@ export default function ClientConfirmation() {
               </a>
             </Button>
           )}
-          {upcomingMeeting.meet_link && (
+          {confirmedMeeting.meet_link && (
             <Button asChild variant="secondary" size="lg" className="h-14 font-mono md:col-span-2">
-              <a href={upcomingMeeting.meet_link} target="_blank" rel="noreferrer">
+              <a href={confirmedMeeting.meet_link} target="_blank" rel="noreferrer">
                 Abrir Google Meet <Video className="h-5 w-5" />
               </a>
             </Button>
           )}
-          {!upcomingMeeting.google_html_link && !consultant?.whatsapp_number && (
+          {!confirmedMeeting.google_html_link && !consultant?.whatsapp_number && (
             <Button size="lg" className="h-14 font-mono" onClick={() => navigate('/status')}>
               Voltar para meu agendamento
             </Button>

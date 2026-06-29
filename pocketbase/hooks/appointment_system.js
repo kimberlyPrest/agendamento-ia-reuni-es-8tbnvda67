@@ -1515,6 +1515,17 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
     )
     return entry ? entry.uri : ''
   }
+  const googleEventAttendees = (consultant, client) => {
+    const seen = {}
+    return [consultant.get('email'), client.get('email')]
+      .filter((email) => {
+        if (!email || seen[email]) return false
+        seen[email] = true
+        return true
+      })
+      .map((email) => ({ email, responseStatus: 'accepted' }))
+  }
+
   const createGoogleEvent = (consultant, client, program, title, start, end) => {
     const accessToken = refreshGoogleAccessToken(consultant)
     if (!accessToken) throw new Error('Google Calendar não conectado.')
@@ -1534,9 +1545,7 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
           dateTime: end.toISOString(),
           timeZone: textValue(consultant, 'working_timezone', BR_TIMEZONE),
         },
-        attendees: [{ email: consultant.get('email') }, { email: client.get('email') }].filter(
-          (item) => item.email,
-        ),
+        attendees: googleEventAttendees(consultant, client),
         conferenceData: {
           createRequest: {
             requestId: $security.randomString(24).toLowerCase(),
@@ -1550,7 +1559,7 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
       throw new Error('Não foi possível criar o evento no Google Calendar.')
     return res.json
   }
-  const patchGoogleEvent = (consultant, meeting, title, start, end) => {
+  const patchGoogleEvent = (consultant, client, meeting, title, start, end) => {
     const eventId = meeting.get('google_event_id')
     if (!eventId) return null
     const accessToken = refreshGoogleAccessToken(consultant)
@@ -1570,6 +1579,7 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
           dateTime: end.toISOString(),
           timeZone: textValue(consultant, 'working_timezone', BR_TIMEZONE),
         },
+        attendees: googleEventAttendees(consultant, client),
       }),
       timeout: 30,
     })
@@ -1721,7 +1731,7 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
       const title =
         meeting.get('title') ||
         buildMeetingTitle(program, client, meeting.get('meeting_number') || 1)
-      const googleEvent = patchGoogleEvent(consultant, meeting, title, start, end)
+      const googleEvent = patchGoogleEvent(consultant, client, meeting, title, start, end)
       meeting.set('title', title)
       meeting.set('start_time', pbDate(start))
       meeting.set('end_time', pbDate(end))
