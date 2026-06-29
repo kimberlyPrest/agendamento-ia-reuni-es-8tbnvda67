@@ -377,7 +377,7 @@ export default function ClientSchedule() {
   )
 
   return (
-    <section className="animate-fade-in-up flex h-dvh flex-col overflow-hidden">
+    <section className="animate-fade-in-up flex min-h-dvh flex-col">
       <header className="mx-auto flex h-12 w-full max-w-[1080px] shrink-0 items-center justify-between px-4 sm:h-14 sm:px-6">
         <EliteBrand compact className="origin-left scale-75" />
         <button type="button" aria-label="Voltar" onClick={() => navigate('/status')}>
@@ -387,7 +387,7 @@ export default function ClientSchedule() {
         </button>
       </header>
 
-      <div className="mx-auto flex min-h-0 w-full max-w-[1080px] flex-1 flex-col px-4 pb-3 pt-2 sm:px-6 sm:pb-5 sm:pt-3">
+      <div className="mx-auto flex w-full max-w-[1080px] flex-1 flex-col px-4 pb-3 pt-2 sm:px-6 sm:pb-5 sm:pt-3">
         <div className="shrink-0">
           <EliteKicker className="min-h-6 px-3 text-[0.62rem] max-[720px]:hidden">
             Sessão de consultoria
@@ -413,8 +413,8 @@ export default function ClientSchedule() {
           </ElitePanel>
         )}
 
-        <div className="mt-3 grid min-h-0 flex-1 gap-4 sm:mt-5 lg:grid-cols-[minmax(0,1fr)_300px]">
-          <ElitePanel className="flex min-h-0 flex-col overflow-hidden p-3 sm:p-4 md:p-5">
+        <div className="mt-3 grid gap-4 sm:mt-5 lg:grid-cols-[minmax(0,1fr)_300px]">
+          <ElitePanel className="flex flex-col p-3 sm:p-4 md:p-5">
             <AvailabilityCalendar
               selected={date}
               visibleMonth={visibleMonth}
@@ -427,62 +427,56 @@ export default function ClientSchedule() {
               onMonthChange={setVisibleMonth}
             />
 
-            <div className="mt-4 flex min-h-0 flex-1 flex-col border-t border-border pt-3">
-              <div className="flex shrink-0 items-center gap-2 font-mono text-[0.68rem] font-bold uppercase text-muted-foreground">
+            <div className="mt-4 border-t border-border pt-3">
+              <div className="flex items-center gap-2 font-mono text-[0.68rem] font-bold uppercase text-muted-foreground">
                 <Clock className="h-4 w-4" />
                 Horários disponíveis: {shortDateLabel}
               </div>
 
-              <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
-                <div className="flex flex-wrap gap-2 pb-1">
-                  {loading ? (
-                    <p className="text-sm text-muted-foreground">Buscando horários...</p>
-                  ) : error ? (
-                    <div className="flex w-full min-w-0 flex-col gap-3 rounded-md border border-[#fbbf24]/30 bg-[#fbbf24]/10 p-3 text-sm text-[#fbbf24] sm:flex-row sm:items-center sm:justify-between">
-                      <div className="flex min-w-0 gap-3">
-                        <AlertTriangle className="h-5 w-5 shrink-0" />
-                        <span className="min-w-0 leading-5">{error}</span>
-                      </div>
-                      {needsConsultantSupport && supportHref && (
-                        <Button
-                          asChild
-                          size="sm"
-                          variant="outline"
-                          className="h-9 w-full shrink-0 border-[#fbbf24]/40 text-[#fbbf24] hover:bg-[#fbbf24]/10 sm:w-auto"
-                        >
-                          <a href={supportHref} target="_blank" rel="noreferrer">
-                            WhatsApp <MessageCircle className="h-4 w-4" />
-                          </a>
-                        </Button>
-                      )}
+              <div className="mt-3 flex flex-wrap gap-2">
+                {loading ? (
+                  <p className="text-sm text-muted-foreground">Buscando horários...</p>
+                ) : error ? (
+                  <div className="flex w-full min-w-0 flex-col gap-3 rounded-md border border-[#fbbf24]/30 bg-[#fbbf24]/10 p-3 text-sm text-[#fbbf24] sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex min-w-0 gap-3">
+                      <AlertTriangle className="h-5 w-5 shrink-0" />
+                      <span className="min-w-0 leading-5">{error}</span>
                     </div>
-                  ) : slots.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Sem horários disponíveis</p>
-                  ) : (
-                    slots.map((slot) => (
+                    {needsConsultantSupport && supportHref && (
                       <Button
-                        key={`${slot.start_time}-${slot.time}`}
-                        type="button"
-                        variant={
-                          selectedSlot?.start_time === slot.start_time ? 'default' : 'outline'
-                        }
-                        className={cn(
-                          'h-9 min-w-20 rounded-full px-4 font-mono text-xs',
-                          selectedSlot?.start_time === slot.start_time &&
-                            'bg-transparent text-primary ring-1 ring-primary hover:bg-primary/10',
-                        )}
-                        onClick={() => setSelectedSlot(slot)}
+                        asChild
+                        size="sm"
+                        variant="outline"
+                        className="h-9 w-full shrink-0 border-[#fbbf24]/40 text-[#fbbf24] hover:bg-[#fbbf24]/10 sm:w-auto"
                       >
-                        {slot.time}
+                        <a href={supportHref} target="_blank" rel="noreferrer">
+                          WhatsApp <MessageCircle className="h-4 w-4" />
+                        </a>
                       </Button>
-                    ))
-                  )}
-                </div>
+                    )}
+                  </div>
+                ) : slots.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Sem horários disponíveis</p>
+                ) : (
+                  slots.map((slot) => (
+                    <Button
+                      key={`${slot.start_time}-${slot.time}`}
+                      type="button"
+                      variant={selectedSlot?.start_time === slot.start_time ? 'default' : 'outline'}
+                      className={cn(
+                        'h-9 min-w-20 rounded-full px-4 font-mono text-xs',
+                        selectedSlot?.start_time === slot.start_time &&
+                          'bg-transparent text-primary ring-1 ring-primary hover:bg-primary/10',
+                      )}
+                      onClick={() => setSelectedSlot(slot)}
+                    >
+                      {slot.time}
+                    </Button>
+                  ))
+                )}
               </div>
             </div>
-            <div className="mt-3 shrink-0 border-t border-border pt-3 lg:hidden">
-              {scheduleAction}
-            </div>
+            <div className="mt-3 border-t border-border pt-3 lg:hidden">{scheduleAction}</div>
           </ElitePanel>
 
           <CompactGuidelines className="hidden lg:flex" action={scheduleAction} />
