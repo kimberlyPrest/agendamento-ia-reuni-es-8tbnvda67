@@ -998,14 +998,24 @@ routerAdd('POST', '/backend/v1/hub/{path...}', (e) => {
     meeting.set('tldv_url', remote.url || meeting.get('tldv_url') || '')
     meeting.set('recording_url', remote.url || meeting.get('recording_url') || '')
     if (!meeting.get('source')) meeting.set('source', created ? 'tldv' : 'google_calendar')
-    if (!meeting.get('tldv_transcript_text')) {
+    const remoteUpdatedAt = parseHubspotDate(
+      remote.updatedAt ||
+        remote.updated_at ||
+        remote.modifiedAt ||
+        remote.transcriptUpdatedAt ||
+        remote.notesUpdatedAt,
+    )
+    const lastSyncedAt = parseHubspotDate(meeting.get('tldv_synced_at'))
+    const shouldRefreshDetails =
+      created || !lastSyncedAt || (remoteUpdatedAt && remoteUpdatedAt > lastSyncedAt)
+    if (shouldRefreshDetails || !meeting.get('tldv_transcript_text')) {
       try {
         const transcript = tldvRequest(apiKey, `/meetings/${remote.id}/transcript`)
         meeting.set('tldv_transcript', transcript)
         meeting.set('tldv_transcript_text', transcriptToText(transcript))
       } catch (_) {}
     }
-    if (!meeting.get('tldv_notes_markdown')) {
+    if (shouldRefreshDetails || !meeting.get('tldv_notes_markdown')) {
       try {
         const notes = tldvRequest(apiKey, `/meetings/${remote.id}/notes`)
         meeting.set('tldv_notes', notes)

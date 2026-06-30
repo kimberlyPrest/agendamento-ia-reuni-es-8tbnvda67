@@ -4,6 +4,8 @@ const ELITE_GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token'
 const ELITE_GOOGLE_CALENDAR_BASE = 'https://www.googleapis.com/calendar/v3'
 const ELITE_TALLY_API_BASE = 'https://api.tally.so'
 const ELITE_TALLY_FORM_ID = 'wdRX0N'
+const ELITE_GOOGLE_SHEET_ID = '17hsd7jkpRtjKZa6_cXQ4CLSkvjPAVTLVmILebWqDWCs'
+const ELITE_DEFAULT_CLIENT_PASSWORD = 'AdaptaElite26'
 const ELITE_TLDV_API_BASE = 'https://pasta.tldv.io/v1alpha1'
 
 const eliteEnv = (key) => {
@@ -239,6 +241,369 @@ const eliteSyncGoogleCalendars = () => {
   return { enabled: true, checked, updated }
 }
 
+const eliteFindByData = (collection, field, value) => {
+  try {
+    return $app.findFirstRecordByData(collection, field, value)
+  } catch (_) {
+    return null
+  }
+}
+
+const eliteFirstRecord = (collection, sort) => {
+  try {
+    return $app.findRecordsByFilter(collection, '', sort || '', 1, 0)[0] || null
+  } catch (_) {
+    return null
+  }
+}
+
+const eliteEnsureUser = (email, name, userRole, password) => {
+  const normalized = eliteNormalizeEmail(email)
+  if (!normalized) return null
+  const users = $app.findCollectionByNameOrId('_pb_users_auth_')
+  let user = null
+  try {
+    user = $app.findAuthRecordByEmail('_pb_users_auth_', normalized)
+  } catch (_) {}
+  if (!user) {
+    user = new Record(users)
+    user.setEmail(normalized)
+    user.setPassword(password || ELITE_DEFAULT_CLIENT_PASSWORD)
+    user.setVerified(true)
+  }
+  if (name) user.set('name', name)
+  user.set('role', userRole)
+  $app.save(user)
+  return user
+}
+
+const eliteEnsureDefaultProgram = () => {
+  let program = eliteFirstRecord('programs', 'name')
+  if (program) return program
+  program = new Record($app.findCollectionByNameOrId('programs'))
+  program.set('name', 'Elite')
+  program.set('total_meetings', 2)
+  program.set('meeting_duration', 75)
+  program.set('title_template', 'Consultoria Elite - {client_name}')
+  program.set('require_tally', true)
+  program.set('allow_concurrent', false)
+  program.set('max_future_meetings', 1)
+  program.set('min_interval_days', 7)
+  program.set('min_interval_unit', 'days')
+  program.set('min_reschedule_hours', 24)
+  program.set('late_reschedule_delay_days', 7)
+  program.set('booking_window_days', 60)
+  $app.save(program)
+  return program
+}
+
+const eliteEnsureDefaultConsultant = () => {
+  let consultant = eliteFirstRecord('consultants', 'name')
+  if (consultant) return consultant
+  consultant = new Record($app.findCollectionByNameOrId('consultants'))
+  consultant.set('name', 'Consultor a definir')
+  consultant.set('email', 'consultor@adapta.org')
+  consultant.set('google_calendar_id', 'primary')
+  consultant.set('working_timezone', 'America/Sao_Paulo')
+  consultant.set('working_hours', {
+    monday: [{ start: '09:00', end: '18:00' }],
+    tuesday: [{ start: '09:00', end: '18:00' }],
+    wednesday: [{ start: '09:00', end: '18:00' }],
+    thursday: [{ start: '09:00', end: '18:00' }],
+    friday: [{ start: '09:00', end: '18:00' }],
+    saturday: [],
+    sunday: [],
+  })
+  $app.save(consultant)
+  return consultant
+}
+
+const eliteExternalId = (kind, id) => {
+  if (!id) return null
+  try {
+    return $app.findFirstRecordByFilter(
+      'external_ids',
+      `kind = '${eliteEscapeFilterValue(kind)}' && external_id = '${eliteEscapeFilterValue(id)}'`,
+    )
+  } catch (_) {
+    return null
+  }
+}
+
+const eliteConsultantForOwner = (ownerId, fallbackName) => {
+  const mapping = eliteExternalId('owner', ownerId)
+  if (mapping && mapping.get('consultant_id')) {
+    try {
+      return $app.findRecordById('consultants', mapping.get('consultant_id'))
+    } catch (_) {}
+  }
+  let consultant = eliteFindByData('consultants', 'hubspot_owner_id', ownerId)
+  if (consultant) return consultant
+  if (fallbackName) {
+    try {
+      consultant = $app.findFirstRecordByData('consultants', 'name', fallbackName)
+      if (consultant) return consultant
+    } catch (_) {}
+  }
+  return eliteEnsureDefaultConsultant()
+}
+
+const eliteProgramForStage = (stageId) => {
+  const mapping = eliteExternalId('deal_stage', stageId)
+  if (mapping && mapping.get('program_id')) {
+    try {
+      return $app.findRecordById('programs', mapping.get('program_id'))
+    } catch (_) {}
+  }
+  return eliteEnsureDefaultProgram()
+}
+
+const eliteHeaderKey = (value) => {
+  const replacements = {
+    á: 'a',
+    à: 'a',
+    â: 'a',
+    ã: 'a',
+    ä: 'a',
+    é: 'e',
+    è: 'e',
+    ê: 'e',
+    ë: 'e',
+    í: 'i',
+    ì: 'i',
+    î: 'i',
+    ï: 'i',
+    ó: 'o',
+    ò: 'o',
+    ô: 'o',
+    õ: 'o',
+    ö: 'o',
+    ú: 'u',
+    ù: 'u',
+    û: 'u',
+    ü: 'u',
+    ç: 'c',
+    ª: 'a',
+    º: 'o',
+  }
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[áàâãäéèêëíìîïóòôõöúùûüçªº]/g, (char) => replacements[char] || char)
+}
+
+const eliteDetectCsvDelimiter = (text) => {
+  const firstLine =
+    String(text || '')
+      .split(/\r?\n/)
+      .find((line) => line.trim()) || ''
+  let quoted = false
+  let commas = 0
+  let semicolons = 0
+  for (let index = 0; index < firstLine.length; index += 1) {
+    const char = firstLine[index]
+    const next = firstLine[index + 1]
+    if (char === '"') {
+      if (quoted && next === '"') index += 1
+      else quoted = !quoted
+    } else if (!quoted && char === ',') commas += 1
+    else if (!quoted && char === ';') semicolons += 1
+  }
+  return semicolons > commas ? ';' : ','
+}
+
+const eliteParseCsv = (text) => {
+  const delimiter = eliteDetectCsvDelimiter(text)
+  const rows = []
+  let row = []
+  let cell = ''
+  let quoted = false
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index]
+    const next = text[index + 1]
+    if (char === '"') {
+      if (quoted && next === '"') {
+        cell += '"'
+        index += 1
+      } else quoted = !quoted
+    } else if (char === delimiter && !quoted) {
+      row.push(cell)
+      cell = ''
+    } else if ((char === '\n' || char === '\r') && !quoted) {
+      if (char === '\r' && next === '\n') index += 1
+      row.push(cell)
+      if (row.some((item) => String(item).trim() !== '')) rows.push(row)
+      row = []
+      cell = ''
+    } else cell += char
+  }
+  row.push(cell)
+  if (row.some((item) => String(item).trim() !== '')) rows.push(row)
+  return rows
+}
+
+const eliteRowValue = (row, headerMap, names) => {
+  for (let index = 0; index < names.length; index += 1) {
+    const column = headerMap[eliteHeaderKey(names[index])]
+    if (column !== undefined) return String(row[column] || '').trim()
+  }
+  return ''
+}
+
+const eliteStageMeetingNumber = (stage) => {
+  const match = eliteHeaderKey(stage).match(/(\d+)\s*(?:a|o)?/)
+  if (match) return Number(match[1])
+  const text = eliteHeaderKey(stage)
+  const words = [
+    ['primeira', 1],
+    ['primeiro', 1],
+    ['segunda', 2],
+    ['segundo', 2],
+    ['terceira', 3],
+    ['terceiro', 3],
+    ['quarta', 4],
+    ['quarto', 4],
+    ['quinta', 5],
+    ['quinto', 5],
+    ['sexta', 6],
+    ['sexto', 6],
+  ]
+  const found = words.find((item) => text.includes(item[0]))
+  return found ? found[1] : 0
+}
+
+const eliteStageProgress = (stageText, program, currentMeetingNumber) => {
+  const text = eliteHeaderKey(stageText)
+  const limit = Number(program.get('total_meetings') || 1)
+  const number = eliteStageMeetingNumber(stageText)
+  const hasFinalized = text.includes('finalizad')
+  const hasPending = text.includes('pendent')
+  const hasRefund =
+    text.includes('reembolso') || text.includes('reembols') || text.includes('refund')
+  const hasNoShow = text.includes('no show') || text.includes('noshow') || text.includes('no-show')
+  let completed = Math.max(0, Number(currentMeetingNumber || 1) - 1)
+  if (stageText) completed = 0
+  if (hasRefund) completed = number > 0 ? Math.max(0, number - 1) : completed
+  else if (hasNoShow && number > 0) completed = Math.max(0, number - 1)
+  else if (hasFinalized && number > 0) completed = number
+  else if (hasFinalized && number === 0) completed = limit
+  else if (hasPending && number > 0) completed = Math.max(0, number - 1)
+  completed = Math.max(0, Math.min(completed, limit))
+  return { completed, next_meeting_number: completed + 1 }
+}
+
+const eliteSheetUrl = () =>
+  eliteEnv('GOOGLE_SHEETS_CSV_URL') ||
+  `https://docs.google.com/spreadsheets/d/${ELITE_GOOGLE_SHEET_ID}/export?format=csv&gid=0`
+
+const eliteSyncSheetClients = () => {
+  const res = $http.send({ url: eliteSheetUrl(), method: 'GET', timeout: 45 })
+  if (res.statusCode < 200 || res.statusCode >= 300)
+    throw new Error(
+      'Nao foi possivel ler a planilha. Verifique o compartilhamento ou GOOGLE_SHEETS_CSV_URL.',
+    )
+  const rows = eliteParseCsv(res.raw || res.body || String(res.text || ''))
+  if (rows.length < 2) return { enabled: true, checked: 0, updated: 0, imported: 0 }
+  const headers = rows[0]
+  const headerMap = {}
+  headers.forEach((header, index) => {
+    headerMap[eliteHeaderKey(header)] = index
+  })
+  let checked = 0
+  let updated = 0
+  const imported = []
+  rows.slice(1).forEach((row, index) => {
+    const email = eliteNormalizeEmail(eliteRowValue(row, headerMap, ['Email do contato', 'Email']))
+    if (!email) return
+    checked += 1
+    const dealId = eliteRowValue(row, headerMap, [
+      'Deal ID',
+      'ID do negocio',
+      'ID do negócio',
+      'HubSpot Deal ID',
+    ])
+    const dealName = eliteRowValue(row, headerMap, ['Nome do negocio', 'Nome do negócio'])
+    const stageId = eliteRowValue(row, headerMap, [
+      'Etapa do negocio',
+      'Etapa do negócio',
+      'Status na pipe',
+      'Status da pipe',
+    ])
+    const ownerId = eliteRowValue(row, headerMap, [
+      'Proprietario do negocio',
+      'Proprietário do negócio',
+      'Nome do proprietario do negocio',
+      'Nome do proprietário do negócio',
+      'Owner',
+    ])
+    const firstConsultantKey = eliteRowValue(row, headerMap, [
+      'Especialista Primeira Reuniao',
+      'Especialista Primeira Reunião',
+    ])
+    const secondConsultantKey = eliteRowValue(row, headerMap, [
+      'Especialista Segunda Reuniao',
+      'Especialista Segunda Reunião',
+    ])
+    const name = eliteRowValue(row, headerMap, ['Nome do contato', 'Nome']) || dealName || email
+    const phone = eliteRowValue(row, headerMap, [
+      'Telefone do contato',
+      'Telefone/WhatsApp',
+      'Telefone',
+    ])
+    const stageMap = eliteExternalId('deal_stage', stageId)
+    const ownerMap = eliteExternalId('owner', ownerId)
+    const program = eliteProgramForStage(stageId)
+    const consultant = eliteConsultantForOwner(ownerId, firstConsultantKey || secondConsultantKey)
+    const user = eliteEnsureUser(email, name, 'client', ELITE_DEFAULT_CLIENT_PASSWORD)
+    let client = dealId ? eliteFindByData('clients', 'hubspot_deal_id', dealId) : null
+    if (!client) client = eliteFindByData('clients', 'email', email)
+    if (!client) client = new Record($app.findCollectionByNameOrId('clients'))
+    client.set('email', email)
+    client.set('name', name)
+    client.set('program_id', program.id)
+    client.set('consultant_id', consultant.id)
+    client.set('user_id', user ? user.id : '')
+    client.set('hubspot_deal_id', dealId)
+    client.set('deal_name', dealName)
+    client.set('deal_stage_id', stageId)
+    client.set('deal_stage_name', stageMap ? stageMap.get('name') : stageId)
+    client.set('deal_owner_id', ownerId)
+    client.set('deal_owner_name', ownerMap ? ownerMap.get('name') : ownerId)
+    client.set('contact_phone', phone)
+    const closedAt = eliteParseDate(eliteRowValue(row, headerMap, ['Data de fechamento']))
+    const firstCallAt = eliteParseDate(
+      eliteRowValue(row, headerMap, ['Data 1a Call', 'Data 1ª Call']),
+    )
+    const secondCallAt = eliteParseDate(
+      eliteRowValue(row, headerMap, ['Data 2a Call', 'Data 2ª Call']),
+    )
+    if (closedAt) client.set('closed_at', elitePbDate(closedAt))
+    if (firstCallAt) client.set('first_call_at', elitePbDate(firstCallAt))
+    if (secondCallAt) client.set('second_call_at', elitePbDate(secondCallAt))
+    client.set('first_call_consultant_key', firstConsultantKey)
+    client.set('second_call_consultant_key', secondConsultantKey)
+    client.set('sheet_row_number', index + 2)
+    client.set('sheet_payload', { headers, row })
+    client.set('sheet_synced_at', elitePbDate(new Date()))
+    const progress = eliteStageProgress(
+      stageMap ? stageMap.get('name') : stageId,
+      program,
+      client.get('current_meeting_number'),
+    )
+    client.set('current_meeting_number', progress.next_meeting_number)
+    if (client.get('form_answered') === null || client.get('form_answered') === undefined)
+      client.set('form_answered', false)
+    $app.save(client)
+    updated += 1
+    imported.push({ id: client.id, email, name })
+  })
+  eliteWriteSyncLog('google_sheets', 'success', checked, updated, 'Clientes sincronizados.', {
+    url: eliteSheetUrl(),
+    imported: imported.slice(0, 50),
+  })
+  return { enabled: true, checked, updated, imported: imported.length }
+}
+
 const eliteTldvRequest = (apiKey, path) => {
   const res = $http.send({
     url: `${ELITE_TLDV_API_BASE}${path}`,
@@ -370,14 +735,24 @@ const eliteUpsertTldvMeeting = (apiKey, consultant, client, remote) => {
   meeting.set('tldv_meeting_id', remote.id)
   meeting.set('tldv_url', remote.url || meeting.get('tldv_url') || '')
   meeting.set('recording_url', remote.url || meeting.get('recording_url') || '')
-  if (!meeting.get('tldv_transcript_text')) {
+  const remoteUpdatedAt = eliteParseDate(
+    remote.updatedAt ||
+      remote.updated_at ||
+      remote.modifiedAt ||
+      remote.transcriptUpdatedAt ||
+      remote.notesUpdatedAt,
+  )
+  const lastSyncedAt = eliteParseDate(meeting.get('tldv_synced_at'))
+  const shouldRefreshDetails =
+    created || !lastSyncedAt || (remoteUpdatedAt && remoteUpdatedAt > lastSyncedAt)
+  if (shouldRefreshDetails || !meeting.get('tldv_transcript_text')) {
     try {
       const transcript = eliteTldvRequest(apiKey, `/meetings/${remote.id}/transcript`)
       meeting.set('tldv_transcript', transcript)
       meeting.set('tldv_transcript_text', eliteTranscriptToText(transcript))
     } catch (_) {}
   }
-  if (!meeting.get('tldv_notes_markdown')) {
+  if (shouldRefreshDetails || !meeting.get('tldv_notes_markdown')) {
     try {
       const notes = eliteTldvRequest(apiKey, `/meetings/${remote.id}/notes`)
       meeting.set('tldv_notes', notes)
@@ -452,6 +827,7 @@ cronAdd('elite_integrations_sync', '* * * * *', () => {
   try {
     runStep('tally', eliteSyncTallyAnsweredClients)
     runStep('google_calendar', eliteSyncGoogleCalendars)
+    runStep('google_sheets', eliteSyncSheetClients)
     runStep('tldv', eliteSyncTldv)
     eliteWriteSyncLog(
       'integrations_cron',
