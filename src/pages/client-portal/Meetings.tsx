@@ -66,12 +66,7 @@ export default function ClientMeetings() {
     const [meetingData, portalData] = await Promise.all([getClientMeetings(), getClientPortal()])
     setMeetings(meetingData.meetings || [])
     setPortal(portalData)
-    setClientData(
-      portalData.client,
-      portalData.upcoming,
-      portalData.stats,
-      portalData.lastMeeting,
-    )
+    setClientData(portalData.client, portalData.upcoming, portalData.stats, portalData.lastMeeting)
   }
 
   useEffect(() => {
@@ -170,7 +165,7 @@ export default function ClientMeetings() {
             ))}
           </div>
         </div>
-      ) : null}
+      )}
 
       {meetings.length === 0 ? (
         <Card className="bg-card border-border rounded-xl shadow-none">
@@ -207,20 +202,26 @@ export default function ClientMeetings() {
                   <CardContent className="space-y-4 p-4">
                     <div>
                       <Badge variant={meeting.status === 'completed' ? 'default' : 'outline'}>
-                        {cancelled ? 'Cancelada' : meeting.status === 'completed' ? 'Realizada' : 'Registro'}
+                        {cancelled
+                          ? 'Cancelada'
+                          : meeting.status === 'completed'
+                            ? 'Realizada'
+                            : 'Registro'}
                       </Badge>
                       <h3 className="font-display mt-3 text-lg font-semibold">
                         {meeting.title || 'Consultoria Elite'}
                       </h3>
                       <p className="mt-1 flex items-center text-sm text-muted-foreground">
-                        <CalendarDays className="mr-2 h-4 w-4" /> {formatDateTime(meeting.start_time)}
+                        <CalendarDays className="mr-2 h-4 w-4" />{' '}
+                        {formatDateTime(meeting.start_time)}
                       </p>
                     </div>
-                    {(meeting.tldv_notes_markdown || meeting.tldv_transcript_text) && !cancelled && (
-                      <div className="max-h-28 overflow-hidden rounded-lg bg-secondary p-3 text-xs text-muted-foreground">
-                        {meeting.tldv_notes_markdown || meeting.tldv_transcript_text}
-                      </div>
-                    )}
+                    {(meeting.tldv_notes_markdown || meeting.tldv_transcript_text) &&
+                      !cancelled && (
+                        <div className="max-h-28 overflow-hidden rounded-lg bg-secondary p-3 text-xs text-muted-foreground">
+                          {meeting.tldv_notes_markdown || meeting.tldv_transcript_text}
+                        </div>
+                      )}
                     <div className="flex flex-wrap gap-2">
                       {recording && !cancelled && (
                         <Button variant="outline" size="sm" asChild>
@@ -246,7 +247,7 @@ export default function ClientMeetings() {
             })}
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   )
 }
