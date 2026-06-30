@@ -1099,6 +1099,67 @@ routerAdd('POST', '/backend/v1/hub/{path...}', (e) => {
     )
     return { enabled: true, checked: remoteMeetings.length, matched, updated, created }
   }
+  const tldvMeetingSummary = (meeting) => {
+    const emails = remoteMeetingEmails(meeting)
+    const startedAt = remoteMeetingDate(meeting)
+    return {
+      id: meeting.id || '',
+      name: meeting.name || meeting.title || 'Reunião tl;dv',
+      url: meeting.url || '',
+      started_at: startedAt ? startedAt.toISOString() : '',
+      duration: meeting.duration || 0,
+      emails,
+    }
+  }
+  const searchTldvMeetingsForConsultant = (consultant, query) => {
+    const apiKey = consultant.get('tldv_api_key') || env('TLDV_API_KEY')
+    if (!apiKey) return { enabled: false, meetings: [] }
+    const raw = String(query || '')
+      .trim()
+      .toLowerCase()
+    const terms = raw.split(/\s+/).filter((item) => item)
+    const meetings = tldvMeetings(apiKey)
+      .map((meeting) => tldvMeetingSummary(meeting))
+      .filter((meeting) => {
+        if (!terms.length) return true
+        const haystack =
+          `${meeting.id} ${meeting.name} ${meeting.url} ${meeting.started_at} ${meeting.emails.join(' ')}`.toLowerCase()
+        return terms.every((term) => haystack.includes(term))
+      })
+      .slice(0, 30)
+    return { enabled: true, meetings }
+  }
+  const linkTldvMeetingManually = (meetingId, tldvMeetingId) => {
+    if (!meetingId || !tldvMeetingId) throw new Error('Reunião e tl;dv são obrigatórios.')
+    const meeting = $app.findRecordById('meetings', meetingId)
+    const consultant = $app.findRecordById('consultants', meeting.get('consultant_id'))
+    if (!isAdmin()) {
+      const current = findConsultantForAuth()
+      if (!current || current.id !== consultant.id) throw new Error('Acesso restrito.')
+    }
+    const apiKey = consultant.get('tldv_api_key') || env('TLDV_API_KEY')
+    if (!apiKey) throw new Error('Informe a API key do tl;dv antes de vincular.')
+    const remote = tldvMeetings(apiKey).find((item) => String(item.id) === String(tldvMeetingId))
+    if (!remote) throw new Error('Reunião tl;dv não encontrada para esta API key.')
+    meeting.set('tldv_meeting_id', remote.id)
+    meeting.set('tldv_url', remote.url || meeting.get('tldv_url') || '')
+    meeting.set('recording_url', remote.url || meeting.get('recording_url') || '')
+    try {
+      const transcript = tldvRequest(apiKey, `/meetings/${remote.id}/transcript`)
+      meeting.set('tldv_transcript', transcript)
+      meeting.set('tldv_transcript_text', transcriptToText(transcript))
+    } catch (_) {}
+    try {
+      const notes = tldvRequest(apiKey, `/meetings/${remote.id}/notes`)
+      meeting.set('tldv_notes', notes)
+      meeting.set('tldv_notes_markdown', notes.markdownContent || '')
+    } catch (_) {}
+    const meetingStart = parseDate(meeting.get('start_time'))
+    if (meetingStart && meetingStart <= new Date()) meeting.set('status', 'completed')
+    meeting.set('tldv_synced_at', pbDate(new Date()))
+    $app.save(meeting)
+    return { meeting: expand(meeting, ['client_id', 'program_id', 'consultant_id']) }
+  }
 
   if (route === 'auth/change-password') {
     if (!requireAuth() || !e.auth) return forbidden()
@@ -1218,6 +1279,31 @@ routerAdd('POST', '/backend/v1/hub/{path...}', (e) => {
     } catch (err) {
       writeSyncLog('tldv', 'error', 0, 0, err.message || 'Erro no tl;dv.', {})
       return bad(err.message || 'Erro ao sincronizar tl;dv.')
+    }
+  }
+
+  if (route === 'consultant/tldv/search') {
+    if (!requireAuth() || (!isConsultant() && !isAdmin())) return forbidden()
+    const body = e.requestInfo().body || {}
+    try {
+      const consultant =
+        isAdmin() && body.consultant_id
+          ? $app.findRecordById('consultants', body.consultant_id)
+          : findConsultantForAuth()
+      if (!consultant) return bad('Consultor nao encontrado.')
+      return e.json(200, searchTldvMeetingsForConsultant(consultant, body.query || ''))
+    } catch (err) {
+      return bad(err.message || 'Erro ao buscar reuniões do tl;dv.')
+    }
+  }
+
+  if (route === 'consultant/tldv/link') {
+    if (!requireAuth() || (!isConsultant() && !isAdmin())) return forbidden()
+    const body = e.requestInfo().body || {}
+    try {
+      return e.json(200, linkTldvMeetingManually(body.meeting_id, body.tldv_meeting_id))
+    } catch (err) {
+      return bad(err.message || 'Erro ao vincular reunião do tl;dv.')
     }
   }
 

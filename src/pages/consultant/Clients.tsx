@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { cancelMeeting } from '@/services/api'
-import { getConsultantClients } from '@/services/hub'
+import { getConsultantClients, linkTldvMeeting, searchTldvMeetings } from '@/services/hub'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Download, Search } from 'lucide-react'
+import { Download, Link2, Loader2, Search, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 function text(value: any) {
@@ -31,6 +31,18 @@ function formatDate(value?: string) {
   }).format(date)
 }
 
+function formatDateTime(value?: string) {
+  if (!value) return '-'
+  const date = new Date(value.replace(' ', 'T'))
+  if (Number.isNaN(date.getTime())) return '-'
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
 function csvValue(value: any) {
   return `"${String(value ?? '').replace(/"/g, '""')}"`
 }
@@ -42,6 +54,11 @@ export default function ConsultantClients() {
   const [status, setStatus] = useState('all')
   const [tally, setTally] = useState('all')
   const [cancellingId, setCancellingId] = useState('')
+  const [tldvLink, setTldvLink] = useState<any>(null)
+  const [tldvQuery, setTldvQuery] = useState('')
+  const [tldvResults, setTldvResults] = useState<any[]>([])
+  const [searchingTldv, setSearchingTldv] = useState(false)
+  const [linkingTldvId, setLinkingTldvId] = useState('')
 
   const loadClients = async () => {
     const data = await getConsultantClients()
@@ -95,6 +112,53 @@ export default function ConsultantClients() {
       toast.error(err.message || 'Não foi possível cancelar o agendamento.')
     } finally {
       setCancellingId('')
+    }
+  }
+
+  const openTldvLink = async (client: any, meeting: any) => {
+    if (!meeting?.id) return
+    const queryText = [client.email, client.name, formatDate(meeting.start_time)]
+      .filter(Boolean)
+      .join(' ')
+    setTldvLink({ client, meeting })
+    setTldvQuery(queryText)
+    setTldvResults([])
+    setSearchingTldv(true)
+    try {
+      const data = await searchTldvMeetings(queryText)
+      setTldvResults(data.meetings || [])
+    } catch (err: any) {
+      toast.error(err.message || 'Não foi possível buscar reuniões do tl;dv.')
+    } finally {
+      setSearchingTldv(false)
+    }
+  }
+
+  const searchTldv = async () => {
+    setSearchingTldv(true)
+    try {
+      const data = await searchTldvMeetings(tldvQuery)
+      setTldvResults(data.meetings || [])
+      if (!data.enabled) toast.info('Informe sua API key do tl;dv em Configurações.')
+    } catch (err: any) {
+      toast.error(err.message || 'Não foi possível buscar reuniões do tl;dv.')
+    } finally {
+      setSearchingTldv(false)
+    }
+  }
+
+  const linkTldv = async (remote: any) => {
+    if (!tldvLink?.meeting?.id || !remote?.id) return
+    setLinkingTldvId(remote.id)
+    try {
+      await linkTldvMeeting(tldvLink.meeting.id, remote.id)
+      await loadClients()
+      setTldvLink(null)
+      toast.success('Reunião do tl;dv vinculada.')
+    } catch (err: any) {
+      toast.error(err.message || 'Não foi possível vincular a reunião do tl;dv.')
+    } finally {
+      setLinkingTldvId('')
     }
   }
 
@@ -200,6 +264,7 @@ export default function ConsultantClients() {
               <TableHead>Progresso</TableHead>
               <TableHead>Última reunião</TableHead>
               <TableHead>Próxima</TableHead>
+              <TableHead>tl;dv</TableHead>
               <TableHead>Tally</TableHead>
             </TableRow>
           </TableHeader>
@@ -207,6 +272,7 @@ export default function ConsultantClients() {
             {filtered.map((item) => {
               const client = item.client || {}
               const stats = item.stats || {}
+              const lastMeeting = stats.last_meeting
               return (
                 <TableRow key={client.id}>
                   <TableCell>
@@ -259,6 +325,32 @@ export default function ConsultantClients() {
                     </div>
                   </TableCell>
                   <TableCell>
+                    {lastMeeting ? (
+                      <div className="space-y-2">
+                        {lastMeeting.tldv_url ? (
+                          <a
+                            className="text-xs text-primary hover:underline"
+                            href={lastMeeting.tldv_url}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Abrir tl;dv
+                          </a>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openTldvLink(client, lastMeeting)}
+                          >
+                            <Link2 className="mr-2 h-4 w-4" /> Linkar
+                          </Button>
+                        )}
+                      </div>
+                    ) : (
+                      '-'
+                    )}
+                  </TableCell>
+                  <TableCell>
                     <Badge
                       variant={
                         client.form_answered
@@ -280,7 +372,7 @@ export default function ConsultantClients() {
             })}
             {filtered.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
                   Nenhum cliente encontrado com os filtros atuais.
                 </TableCell>
               </TableRow>
@@ -288,6 +380,70 @@ export default function ConsultantClients() {
           </TableBody>
         </Table>
       </Card>
+
+      {tldvLink && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4">
+          <Card className="w-full max-w-2xl bg-card border-border rounded-xl p-5 shadow-xl">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <h3 className="font-display text-lg font-semibold">Linkar reunião tl;dv</h3>
+                <p className="text-sm text-muted-foreground">
+                  {tldvLink.client?.name || tldvLink.client?.email} -{' '}
+                  {formatDateTime(tldvLink.meeting?.start_time)}
+                </p>
+              </div>
+              <Button type="button" size="icon" variant="ghost" onClick={() => setTldvLink(null)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="flex gap-2">
+              <Input
+                value={tldvQuery}
+                onChange={(event) => setTldvQuery(event.target.value)}
+                placeholder="Buscar por nome, email, data ou link"
+              />
+              <Button type="button" variant="outline" onClick={searchTldv} disabled={searchingTldv}>
+                {searchingTldv ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Buscar
+              </Button>
+            </div>
+            <div className="mt-4 max-h-[420px] space-y-2 overflow-auto">
+              {tldvResults.map((remote) => (
+                <div
+                  key={remote.id}
+                  className="grid gap-3 rounded-lg border border-border bg-secondary p-3 sm:grid-cols-[1fr_auto] sm:items-center"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{remote.name || 'Reunião tl;dv'}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {formatDateTime(remote.started_at)} -{' '}
+                      {(remote.emails || []).join(', ') || remote.id}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => linkTldv(remote)}
+                    disabled={linkingTldvId === remote.id}
+                  >
+                    {linkingTldvId === remote.id ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Link2 className="mr-2 h-4 w-4" />
+                    )}
+                    Vincular
+                  </Button>
+                </div>
+              ))}
+              {!searchingTldv && tldvResults.length === 0 && (
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  Nenhuma reunião encontrada no tl;dv.
+                </p>
+              )}
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }

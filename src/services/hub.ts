@@ -43,6 +43,16 @@ export const syncTldv = (consultantId?: string) =>
     method: 'POST',
     body: JSON.stringify(consultantId ? { consultant_id: consultantId } : {}),
   })
+export const searchTldvMeetings = (query: string, consultantId?: string) =>
+  hubRequest<any>('/consultant/tldv/search', {
+    method: 'POST',
+    body: JSON.stringify({ query, ...(consultantId ? { consultant_id: consultantId } : {}) }),
+  })
+export const linkTldvMeeting = (meetingId: string, tldvMeetingId: string) =>
+  hubRequest<any>('/consultant/tldv/link', {
+    method: 'POST',
+    body: JSON.stringify({ meeting_id: meetingId, tldv_meeting_id: tldvMeetingId }),
+  })
 export const changePassword = (password: string, passwordConfirm: string) =>
   hubRequest<any>('/auth/change-password', {
     method: 'POST',

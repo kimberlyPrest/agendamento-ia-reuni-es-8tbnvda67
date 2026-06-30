@@ -249,8 +249,50 @@ const eliteGoogleMeetLinkFromEvent = (event) => {
   return entry ? entry.uri : ''
 }
 
+const eliteGoogleSyncWindow = () => {
+  const start = new Date('2025-09-01T00:00:00-03:00')
+  const end = new Date()
+  end.setMonth(end.getMonth() + 3)
+  return { start, end }
+}
+
+const eliteGoogleEventsInWindow = (accessToken, timeMin, timeMax) => {
+  const events = []
+  let pageToken = ''
+  let page = 0
+  while (page < 20) {
+    const query = eliteFormEncode({
+      singleEvents: 'true',
+      showDeleted: 'true',
+      maxResults: 2500,
+      timeMin: timeMin.toISOString(),
+      timeMax: timeMax.toISOString(),
+      pageToken,
+    })
+    const res = $http.send({
+      url: `${ELITE_GOOGLE_CALENDAR_BASE}/calendars/primary/events?${query}`,
+      method: 'GET',
+      headers: { authorization: `Bearer ${accessToken}` },
+      timeout: 45,
+    })
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      const detail = ((res.json || {}).error || {}).message || res.raw || ''
+      throw new Error(detail || 'Google Calendar recusou a lista de eventos.')
+    }
+    const data = res.json || {}
+    ;(data.items || []).forEach((event) => {
+      if (event && event.id) events.push(event)
+    })
+    pageToken = data.nextPageToken || ''
+    if (!pageToken) break
+    page += 1
+  }
+  return events
+}
+
 const eliteSyncGoogleMeetings = () => {
   if (!eliteGoogleConfigReady()) return { enabled: false, checked: 0, updated: 0 }
+  const { start: windowStart, end: windowEnd } = eliteGoogleSyncWindow()
   const consultants = $app.findRecordsByFilter(
     'consultants',
     "google_refresh_token != ''",
@@ -260,47 +302,34 @@ const eliteSyncGoogleMeetings = () => {
   )
   let checked = 0
   let updated = 0
+  let eventsChecked = 0
+  let missingCancelled = 0
   let errors = 0
   consultants.forEach((consultant) => {
-    const accessToken = eliteRefreshGoogleAccessToken(consultant)
-    if (!accessToken) return
-    let meetings = []
     try {
-      meetings = $app.findRecordsByFilter(
+      const accessToken = eliteRefreshGoogleAccessToken(consultant)
+      if (!accessToken) return
+      const events = eliteGoogleEventsInWindow(accessToken, windowStart, windowEnd)
+      eventsChecked += events.length
+      const eventsById = {}
+      events.forEach((event) => {
+        eventsById[event.id] = event
+      })
+      const meetings = $app.findRecordsByFilter(
         'meetings',
-        `consultant_id = '${eliteEscapeFilterValue(consultant.id)}' && google_event_id != '' && status = 'scheduled'`,
+        `consultant_id = '${eliteEscapeFilterValue(consultant.id)}' && google_event_id != '' && status = 'scheduled' && start_time >= '${elitePbDate(windowStart)}' && start_time <= '${elitePbDate(windowEnd)}'`,
         'start_time',
-        500,
+        1000,
         0,
       )
-    } catch (_) {
-      meetings = []
-    }
-    meetings.forEach((meeting) => {
-      checked += 1
-      try {
-        const eventId = meeting.get('google_event_id')
-        const res = $http.send({
-          url: `${ELITE_GOOGLE_CALENDAR_BASE}/calendars/primary/events/${encodeURIComponent(eventId)}`,
-          method: 'GET',
-          headers: { authorization: `Bearer ${accessToken}` },
-          timeout: 30,
-        })
-        if (res.statusCode === 404 || res.statusCode === 410) {
+      meetings.forEach((meeting) => {
+        checked += 1
+        const event = eventsById[meeting.get('google_event_id')]
+        if (!event || event.status === 'cancelled') {
           meeting.set('status', 'cancelled')
           $app.save(meeting)
           updated += 1
-          return
-        }
-        if (res.statusCode < 200 || res.statusCode >= 300) {
-          errors += 1
-          return
-        }
-        const event = res.json || {}
-        if (event.status === 'cancelled') {
-          meeting.set('status', 'cancelled')
-          $app.save(meeting)
-          updated += 1
+          missingCancelled += 1
           return
         }
         const start = eliteParseDate((event.start || {}).dateTime || (event.start || {}).date)
@@ -315,12 +344,21 @@ const eliteSyncGoogleMeetings = () => {
         )
         $app.save(meeting)
         updated += 1
-      } catch (_) {
-        errors += 1
-      }
-    })
+      })
+    } catch (_) {
+      errors += 1
+    }
   })
-  return { enabled: true, checked, updated, errors }
+  return {
+    enabled: true,
+    checked,
+    updated,
+    events_checked: eventsChecked,
+    missing_cancelled: missingCancelled,
+    errors,
+    window_start: windowStart.toISOString(),
+    window_end: windowEnd.toISOString(),
+  }
 }
 
 const eliteFindByData = (collection, field, value) => {
@@ -887,7 +925,7 @@ const eliteSyncTldv = () => {
   return { enabled, checked, matched, updated, created }
 }
 
-cronAdd('elite_integrations_sync', '* * * * *', () => {
+cronAdd('elite_integrations_sync', '*/5 * * * *', () => {
   if (eliteIntegrationsCronRunning) return
   eliteIntegrationsCronRunning = true
   const payload = {}
