@@ -44,9 +44,6 @@ export default function Login() {
         <div className="mb-10 flex justify-center">
           <EliteBrand compact />
         </div>
-        <h1 className="text-center font-display text-4xl font-extrabold text-primary">
-          Consultoria Adapta
-        </h1>
 
         <form onSubmit={handleSubmit} className="mt-10 space-y-5">
           <div className="space-y-2">

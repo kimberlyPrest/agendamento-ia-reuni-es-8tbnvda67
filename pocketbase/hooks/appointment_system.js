@@ -1546,20 +1546,20 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
     )
     return entry ? entry.uri : ''
   }
-  const googleEventAttendees = (consultant, client) => {
-    const seen = {}
-    return [consultant.get('email'), client.get('email')]
-      .filter((email) => {
-        if (!email || seen[email]) return false
-        seen[email] = true
-        return true
-      })
-      .map((email) => ({ email, responseStatus: 'accepted' }))
+  const googleEventAttendees = (_consultant, client) => {
+    const email = client.get('email')
+    return email ? [{ email, responseStatus: 'needsAction' }] : []
   }
 
   const createGoogleEvent = (consultant, client, program, title, start, end) => {
     const accessToken = refreshGoogleAccessToken(consultant)
     if (!accessToken) throw new Error('Google Calendar não conectado.')
+    const connectedEmail = normalizeEmail(consultant.get('google_connected_email'))
+    const consultantEmail = normalizeEmail(consultant.get('email'))
+    if (connectedEmail && consultantEmail && connectedEmail !== consultantEmail)
+      throw new Error(
+        `A conta Google conectada (${connectedEmail}) não é o email do consultor (${consultantEmail}). Reconecte a agenda do consultor correto.`,
+      )
     const calendarId = writableGoogleCalendarId(consultant)
     const res = $http.send({
       url: `${GOOGLE_CALENDAR_BASE}/calendars/${encodeURIComponent(calendarId)}/events?conferenceDataVersion=1&sendUpdates=all`,
@@ -1576,7 +1576,12 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
           dateTime: end.toISOString(),
           timeZone: textValue(consultant, 'working_timezone', BR_TIMEZONE),
         },
+        status: 'confirmed',
+        transparency: 'opaque',
         attendees: googleEventAttendees(consultant, client),
+        guestsCanModify: false,
+        guestsCanInviteOthers: false,
+        guestsCanSeeOtherGuests: true,
         conferenceData: {
           createRequest: {
             requestId: $security.randomString(24).toLowerCase(),
@@ -1586,8 +1591,15 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
       }),
       timeout: 30,
     })
-    if (res.statusCode < 200 || res.statusCode >= 300)
-      throw new Error('Não foi possível criar o evento no Google Calendar.')
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      const detail =
+        ((res.json || {}).error || {}).message || (res.json || {}).message || res.raw || ''
+      throw new Error(
+        detail
+          ? `Não foi possível criar o evento no Google Calendar: ${detail}`
+          : 'Não foi possível criar o evento no Google Calendar.',
+      )
+    }
     return res.json
   }
   const patchGoogleEvent = (consultant, client, meeting, title, start, end) => {
@@ -1610,12 +1622,24 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
           dateTime: end.toISOString(),
           timeZone: textValue(consultant, 'working_timezone', BR_TIMEZONE),
         },
+        status: 'confirmed',
+        transparency: 'opaque',
         attendees: googleEventAttendees(consultant, client),
+        guestsCanModify: false,
+        guestsCanInviteOthers: false,
+        guestsCanSeeOtherGuests: true,
       }),
       timeout: 30,
     })
-    if (res.statusCode < 200 || res.statusCode >= 300)
-      throw new Error('Não foi possível remarcar o evento no Google Calendar.')
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      const detail =
+        ((res.json || {}).error || {}).message || (res.json || {}).message || res.raw || ''
+      throw new Error(
+        detail
+          ? `Não foi possível remarcar o evento no Google Calendar: ${detail}`
+          : 'Não foi possível remarcar o evento no Google Calendar.',
+      )
+    }
     return res.json
   }
   const deleteGoogleEvent = (consultant, meeting) => {
@@ -1832,7 +1856,7 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
         'sha256=',
         '',
       )
-      if (received.length > 0 && received.indexOf(calculated) === -1)
+      if (received.length === 0 || received.indexOf(calculated) === -1)
         return e.json(401, { error: 'Assinatura Tally inválida' })
     }
 

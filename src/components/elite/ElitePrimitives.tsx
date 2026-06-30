@@ -16,7 +16,7 @@ export function EliteBrand({ className }: { compact?: boolean; className?: strin
         height={20}
         loading="eager"
         decoding="async"
-        className="h-5 w-[114px] object-contain"
+        className="h-5 w-[114px] object-contain text-[0.03rem]"
       />
     </div>
   )
