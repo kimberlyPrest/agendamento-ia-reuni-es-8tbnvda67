@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { AlertTriangle, ArrowRight, ShieldCheck, UserCircle } from 'lucide-react'
 
-import { EliteKicker } from '@/components/elite/ElitePrimitives'
+import { EliteBrand, EliteKicker } from '@/components/elite/ElitePrimitives'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
@@ -57,7 +57,7 @@ export default function ClientIndex() {
 
       <header className="relative z-10 border-b border-border bg-surface-overlay/70 backdrop-blur">
         <div className="mx-auto flex h-16 w-full max-w-[1080px] items-center justify-between px-6">
-          <span className="font-display text-sm font-extrabold text-primary">Adapta</span>
+          <EliteBrand compact />
           <Link
             to="/login"
             aria-label="Acessar central"

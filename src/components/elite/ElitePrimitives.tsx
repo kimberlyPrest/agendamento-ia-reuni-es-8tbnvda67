@@ -1,24 +1,23 @@
 import type { ReactNode } from 'react'
-import { Info, Network, ShieldCheck } from 'lucide-react'
+import { Info, ShieldCheck } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 
-export function EliteBrand({
-  compact = false,
-  className,
-}: {
-  compact?: boolean
-  className?: string
-}) {
+export const ADAPTA_LOGO_URL =
+  'https://framerusercontent.com/images/yj4KQoWzRP9I82gt0MOAeLYnPrc.svg?width=114&height=20'
+
+export function EliteBrand({ className }: { compact?: boolean; className?: string }) {
   return (
-    <div className={cn('flex items-center gap-3 text-primary', className)}>
-      <div className="flex h-11 w-11 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-[0_0_24px_-10px_rgba(109,217,187,.9)]">
-        <Network className="h-6 w-6" />
-      </div>
-      <div className="font-display text-2xl font-extrabold leading-none">
-        <span className="block">Adapta</span>
-        {!compact && <span className="block">Elite</span>}
-      </div>
+    <div className={cn('flex items-center', className)}>
+      <img
+        src={ADAPTA_LOGO_URL}
+        alt="Adapta"
+        width={114}
+        height={20}
+        loading="eager"
+        decoding="async"
+        className="h-5 w-[114px] object-contain"
+      />
     </div>
   )
 }

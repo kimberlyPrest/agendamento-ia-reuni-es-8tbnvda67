@@ -16,7 +16,7 @@ import {
 import { differenceInHours, format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
-import { EliteKicker, ElitePanel } from '@/components/elite/ElitePrimitives'
+import { EliteBrand, EliteKicker, ElitePanel } from '@/components/elite/ElitePrimitives'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { cancelMeeting } from '@/services/api'
@@ -25,13 +25,7 @@ import { useClientStore } from '@/stores/use-client-store'
 function ClientFlowHeader() {
   return (
     <header className="relative z-10 mx-auto flex w-full max-w-[1080px] shrink-0 items-center justify-between px-5 py-5 sm:px-6 sm:py-6">
-      <div className="flex items-center gap-3 text-primary">
-        <div className="h-10 w-10 rounded-md bg-[#3dae92] shadow-[0_18px_40px_-22px_rgba(61,174,146,.7)] sm:h-12 sm:w-12" />
-        <div className="font-display text-[1.45rem] font-extrabold leading-[1.08] sm:text-[1.8rem]">
-          <span className="block">Adapta</span>
-          <span className="block">Elite</span>
-        </div>
-      </div>
+      <EliteBrand compact />
       <div className="flex h-10 w-10 items-center justify-center rounded-full border border-border bg-secondary text-muted-foreground transition-colors hover:border-primary/40 hover:bg-muted hover:text-primary sm:h-12 sm:w-12">
         <LogIn className="h-4 w-4" />
       </div>

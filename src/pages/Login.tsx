@@ -42,7 +42,7 @@ export default function Login() {
     <main className="elite-grid flex min-h-screen items-center justify-center p-6">
       <ElitePanel className="w-full max-w-md p-6 md:p-8">
         <div className="mb-10 flex justify-center">
-          <EliteBrand compact className="[&>div:last-child]:text-4xl" />
+          <EliteBrand compact />
         </div>
         <h1 className="text-center font-display text-4xl font-extrabold text-primary">
           Consultoria Adapta

@@ -379,7 +379,7 @@ export default function ClientSchedule() {
   return (
     <section className="animate-fade-in-up flex min-h-dvh flex-col">
       <header className="mx-auto flex h-12 w-full max-w-[1080px] shrink-0 items-center justify-between px-4 sm:h-14 sm:px-6">
-        <EliteBrand compact className="origin-left scale-75" />
+        <EliteBrand compact />
         <button type="button" aria-label="Voltar" onClick={() => navigate('/status')}>
           <EliteHeaderAction className="h-9 w-9">
             <ArrowLeft className="h-4 w-4" />

@@ -19,10 +19,7 @@ export function ClientPortalLayout() {
       <header className="border-b border-border bg-card/70 sticky top-0 z-30 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
           <Link to="/cliente/central" aria-label="Central Elite">
-            <EliteBrand
-              compact
-              className="[&>div:first-child]:h-9 [&>div:first-child]:w-9 [&>div:last-child]:text-xl"
-            />
+            <EliteBrand compact />
           </Link>
           <nav className="flex flex-wrap items-center justify-end gap-2">
             <Button variant="ghost" size="sm" asChild>
