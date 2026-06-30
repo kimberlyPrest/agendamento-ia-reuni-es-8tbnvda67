@@ -89,10 +89,10 @@ export default function Login() {
           <div className="flex justify-end">
             <Link
               to="/forgot-password"
-              className="inline-flex items-center gap-1 font-mono text-sm text-muted-foreground transition-colors hover:text-primary"
+              className="inline-flex items-center gap-1 font-mono text-muted-foreground transition-colors hover:text-primary text-[0.72rem]"
             >
               <Link2 className="h-3 w-3" />
-              Forgot password?
+              Esqueceu a senha?
             </Link>
           </div>
         </form>
