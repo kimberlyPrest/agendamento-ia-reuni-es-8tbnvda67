@@ -26,9 +26,6 @@ function ClientFlowHeader() {
   return (
     <header className="relative z-10 mx-auto flex w-full max-w-[1080px] shrink-0 items-center justify-between px-5 py-5 sm:px-6 sm:py-6">
       <EliteBrand compact />
-      <div className="flex h-10 w-10 items-center justify-center rounded-full border border-border bg-secondary text-muted-foreground transition-colors hover:border-primary/40 hover:bg-muted hover:text-primary sm:h-12 sm:w-12">
-        <LogIn className="h-4 w-4" />
-      </div>
     </header>
   )
 }
