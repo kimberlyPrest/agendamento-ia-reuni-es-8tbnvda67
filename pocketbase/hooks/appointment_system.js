@@ -12,6 +12,10 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
 
   const env = (key) => {
     try {
+      const s = $secrets.get(key)
+      if (s) return s
+    } catch (_) {}
+    try {
       return $os.getenv(key) || ''
     } catch (_) {
       return ''
@@ -936,6 +940,10 @@ routerAdd('POST', '/backend/v1/{path...}', (e) => {
   const route = e.request.pathValue('path')
 
   const env = (key) => {
+    try {
+      const s = $secrets.get(key)
+      if (s) return s
+    } catch (_) {}
     try {
       return $os.getenv(key) || ''
     } catch (_) {
