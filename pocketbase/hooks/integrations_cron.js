@@ -93,8 +93,11 @@ const eliteFindClientByEmail = (email) => {
 }
 
 const eliteSyncTallyAnsweredClients = () => {
-  const apiKey = eliteEnv('TALLY_API_KEY')
-  if (!apiKey) return { enabled: false, checked: 0, updated: 0, matched_emails: 0 }
+  const apiKey = $secrets.get('TALLY_API_KEY') || ''
+  if (!apiKey) {
+    eliteWriteSyncLog('tally_sync', 'skipped', 0, 0, 'TALLY_API_KEY not configured in secrets', {})
+    return { enabled: false, checked: 0, updated: 0, matched_emails: 0 }
+  }
   const formId = eliteEnv('TALLY_FORM_ID') || ELITE_TALLY_FORM_ID
   let page = 1
   let hasMore = true
@@ -137,6 +140,10 @@ const eliteSyncTallyAnsweredClients = () => {
     hasMore = Boolean(data.hasMore)
     page += 1
   }
+  eliteWriteSyncLog('tally_sync', 'success', checked, updated, 'Tally submissions sincronizados.', {
+    form_id: formId,
+    matched_emails: Object.keys(seenEmails).length,
+  })
   return {
     enabled: true,
     form_id: formId,
@@ -1011,7 +1018,17 @@ cronAdd('elite_integrations_sync', '*/5 * * * *', () => {
     }
   }
   try {
-    runStep('tally', eliteSyncTallyAnsweredClients)
+    try {
+      const tallyResult = eliteSyncTallyAnsweredClients()
+      payload.tally = tallyResult
+      checked += Number((tallyResult && tallyResult.checked) || 0)
+      updated += Number((tallyResult && tallyResult.updated + (tallyResult.created || 0)) || 0)
+    } catch (err) {
+      const message = err && err.message ? err.message : String(err)
+      payload.tally = { error: message }
+      errors.push('tally: ' + message)
+      eliteWriteSyncLog('tally_sync', 'error', 0, 0, message, {})
+    }
     runStep('google_calendar', eliteSyncGoogleCalendars)
     runStep('google_meetings', eliteSyncGoogleMeetings)
     runStep('google_sheets', eliteSyncSheetClients)
