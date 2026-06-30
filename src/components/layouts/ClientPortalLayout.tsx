@@ -32,11 +32,7 @@ export function ClientPortalLayout() {
                 <Video className="w-4 h-4 mr-2" /> Reuniões
               </Link>
             </Button>
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/">
-                <CalendarCheck className="w-4 h-4 mr-2" /> Agendar sem senha
-              </Link>
-            </Button>
+            <Button variant="outline" size="sm" asChild></Button>
             <Button variant="ghost" size="icon" onClick={signOut}>
               <LogOut className="w-4 h-4" />
             </Button>
