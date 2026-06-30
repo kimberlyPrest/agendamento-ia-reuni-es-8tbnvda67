@@ -28,7 +28,19 @@ import {
 } from '@/components/ui/dialog'
 import { ClientForm } from '@/components/admin/ClientForm'
 import { deleteClient, syncTallySubmissions } from '@/services/api'
-import { ChevronLeft, ChevronRight, Loader2, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Eye,
+  Loader2,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Trash2,
+} from 'lucide-react'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 
 const PER_PAGE_OPTIONS = [20, 50, 100]
@@ -48,6 +60,7 @@ export default function ClientesList() {
   const [totalItems, setTotalItems] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [viewingPayload, setViewingPayload] = useState<any | null>(null)
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -256,9 +269,42 @@ export default function ClientesList() {
                       )}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={client.form_answered ? 'default' : 'destructive'}>
-                        {client.form_answered ? 'Respondido' : 'Pendente'}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Badge
+                              variant={client.form_answered ? 'default' : 'destructive'}
+                              className="cursor-default"
+                            >
+                              {client.form_answered ? (
+                                <>
+                                  <Check className="w-3 h-3 mr-1" /> Respondido
+                                </>
+                              ) : (
+                                <>
+                                  <Clock className="w-3 h-3 mr-1" /> Pendente
+                                </>
+                              )}
+                            </Badge>
+                          </TooltipTrigger>
+                          {client.form_answered && client.tally_answered_at && (
+                            <TooltipContent>
+                              Respondido em{' '}
+                              {new Date(client.tally_answered_at).toLocaleString('pt-BR')}
+                            </TooltipContent>
+                          )}
+                        </Tooltip>
+                        {client.form_answered && client.tally_payload && (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7"
+                            onClick={() => setViewingPayload(client)}
+                          >
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-2">
@@ -339,6 +385,27 @@ export default function ClientesList() {
           </div>
         </div>
       </div>
+
+      <Dialog open={!!viewingPayload} onOpenChange={(next) => !next && setViewingPayload(null)}>
+        <DialogContent className="bg-card border-border rounded-xl sm:max-w-[640px] text-white max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-display">Respostas do Tally</DialogTitle>
+          </DialogHeader>
+          {viewingPayload && (
+            <div className="space-y-3">
+              {viewingPayload.tally_answered_at && (
+                <p className="text-sm text-muted-foreground">
+                  Respondido em:{' '}
+                  {new Date(viewingPayload.tally_answered_at).toLocaleString('pt-BR')}
+                </p>
+              )}
+              <pre className="text-sm text-muted-foreground whitespace-pre-wrap break-words">
+                {JSON.stringify(viewingPayload.tally_payload, null, 2)}
+              </pre>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
