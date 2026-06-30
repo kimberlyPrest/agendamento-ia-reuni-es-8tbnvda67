@@ -124,42 +124,50 @@ export default function ClientMeetings() {
           <div className="grid gap-4 lg:grid-cols-2">
             {futureMeetings.map((meeting) => (
               <Card key={meeting.id} className="bg-card border-border rounded-xl shadow-none">
-                <CardContent className="grid gap-4 p-5 sm:grid-cols-[1fr_auto] sm:items-center">
-                  <div className="min-w-0">
-                    <Badge variant="outline">Agendada</Badge>
-                    <h3 className="mt-3 truncate font-display text-xl font-semibold">
+                <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex min-w-0 flex-col gap-2">
+                    <Badge variant="outline" className="w-fit">
+                      Agendada
+                    </Badge>
+                    <h3 className="truncate font-display text-xl font-semibold">
                       {meeting.title || 'Consultoria Elite'}
                     </h3>
-                    <p className="mt-2 flex items-center text-sm text-muted-foreground">
+                    <p className="flex items-center text-sm text-muted-foreground">
                       <CalendarDays className="mr-2 h-4 w-4 text-primary" />
                       {formatDateTime(meeting.start_time)}
                     </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2 sm:justify-end">
-                    {meeting.meet_link && (
-                      <Button size="sm" asChild>
-                        <a href={meeting.meet_link} target="_blank" rel="noreferrer">
-                          <Video className="mr-2 h-4 w-4" /> Google Meet
-                        </a>
+                    <div className="mt-1 flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 px-3 text-xs"
+                        onClick={() => rescheduleMeeting(meeting)}
+                      >
+                        <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Remarcar
                       </Button>
-                    )}
-                    <Button size="sm" variant="outline" onClick={() => rescheduleMeeting(meeting)}>
-                      <RotateCcw className="mr-2 h-4 w-4" /> Remarcar
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      disabled={cancellingId === meeting.id}
-                      onClick={() => cancelScheduledMeeting(meeting)}
-                    >
-                      {cancellingId === meeting.id ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <XCircle className="mr-2 h-4 w-4" />
-                      )}
-                      Cancelar
-                    </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        className="h-8 px-3 text-xs"
+                        disabled={cancellingId === meeting.id}
+                        onClick={() => cancelScheduledMeeting(meeting)}
+                      >
+                        {cancellingId === meeting.id ? (
+                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <XCircle className="mr-1.5 h-3.5 w-3.5" />
+                        )}
+                        Cancelar
+                      </Button>
+                    </div>
                   </div>
+                  {meeting.meet_link && (
+                    <Button asChild className="shrink-0 sm:mt-8">
+                      <a href={meeting.meet_link} target="_blank" rel="noreferrer">
+                        <Video className="mr-2 h-4 w-4" /> Google Meet
+                      </a>
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
             ))}
