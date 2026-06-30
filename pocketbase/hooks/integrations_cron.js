@@ -241,6 +241,88 @@ const eliteSyncGoogleCalendars = () => {
   return { enabled: true, checked, updated }
 }
 
+const eliteGoogleMeetLinkFromEvent = (event) => {
+  if (event.hangoutLink) return event.hangoutLink
+  const entry = ((event.conferenceData || {}).entryPoints || []).find(
+    (item) => item.entryPointType === 'video',
+  )
+  return entry ? entry.uri : ''
+}
+
+const eliteSyncGoogleMeetings = () => {
+  if (!eliteGoogleConfigReady()) return { enabled: false, checked: 0, updated: 0 }
+  const consultants = $app.findRecordsByFilter(
+    'consultants',
+    "google_refresh_token != ''",
+    'name',
+    500,
+    0,
+  )
+  let checked = 0
+  let updated = 0
+  let errors = 0
+  consultants.forEach((consultant) => {
+    const accessToken = eliteRefreshGoogleAccessToken(consultant)
+    if (!accessToken) return
+    let meetings = []
+    try {
+      meetings = $app.findRecordsByFilter(
+        'meetings',
+        `consultant_id = '${eliteEscapeFilterValue(consultant.id)}' && google_event_id != '' && status = 'scheduled'`,
+        'start_time',
+        500,
+        0,
+      )
+    } catch (_) {
+      meetings = []
+    }
+    meetings.forEach((meeting) => {
+      checked += 1
+      try {
+        const eventId = meeting.get('google_event_id')
+        const res = $http.send({
+          url: `${ELITE_GOOGLE_CALENDAR_BASE}/calendars/primary/events/${encodeURIComponent(eventId)}`,
+          method: 'GET',
+          headers: { authorization: `Bearer ${accessToken}` },
+          timeout: 30,
+        })
+        if (res.statusCode === 404 || res.statusCode === 410) {
+          meeting.set('status', 'cancelled')
+          $app.save(meeting)
+          updated += 1
+          return
+        }
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          errors += 1
+          return
+        }
+        const event = res.json || {}
+        if (event.status === 'cancelled') {
+          meeting.set('status', 'cancelled')
+          $app.save(meeting)
+          updated += 1
+          return
+        }
+        const start = eliteParseDate((event.start || {}).dateTime || (event.start || {}).date)
+        const end = eliteParseDate((event.end || {}).dateTime || (event.end || {}).date)
+        if (start) meeting.set('start_time', elitePbDate(start))
+        if (end) meeting.set('end_time', elitePbDate(end))
+        if (event.summary) meeting.set('title', event.summary)
+        meeting.set('google_html_link', event.htmlLink || meeting.get('google_html_link') || '')
+        meeting.set(
+          'meet_link',
+          eliteGoogleMeetLinkFromEvent(event) || meeting.get('meet_link') || '',
+        )
+        $app.save(meeting)
+        updated += 1
+      } catch (_) {
+        errors += 1
+      }
+    })
+  })
+  return { enabled: true, checked, updated, errors }
+}
+
 const eliteFindByData = (collection, field, value) => {
   try {
     return $app.findFirstRecordByData(collection, field, value)
@@ -827,6 +909,7 @@ cronAdd('elite_integrations_sync', '* * * * *', () => {
   try {
     runStep('tally', eliteSyncTallyAnsweredClients)
     runStep('google_calendar', eliteSyncGoogleCalendars)
+    runStep('google_meetings', eliteSyncGoogleMeetings)
     runStep('google_sheets', eliteSyncSheetClients)
     runStep('tldv', eliteSyncTldv)
     eliteWriteSyncLog(
