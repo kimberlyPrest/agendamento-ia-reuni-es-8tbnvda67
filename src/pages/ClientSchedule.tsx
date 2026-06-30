@@ -290,7 +290,10 @@ export default function ClientSchedule() {
         }
       })
       setSlots(nextSlots)
-      if (data.setup_required) {
+      if (data.blocked || data.blocked_reason) {
+        setSlots([])
+        setError(data.blocked_reason || data.message || 'Este cliente não pode agendar agora.')
+      } else if (data.setup_required) {
         setSlots([])
         setNeedsConsultantSupport(true)
         setError(clientCalendarError)

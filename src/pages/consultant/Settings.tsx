@@ -84,7 +84,7 @@ export default function ConsultantSettings() {
       email: data.consultant.email || '',
       whatsapp_number: data.consultant.whatsapp_number || '',
       photo_url: data.consultant.photo_url || '',
-      tldv_api_key: data.consultant.tldv_api_key || '',
+      tldv_api_key: '',
       google_calendar_id: 'primary',
       working_timezone: data.consultant.working_timezone || 'America/Sao_Paulo',
     })
@@ -496,7 +496,7 @@ export default function ConsultantSettings() {
               type="password"
               value={form.tldv_api_key}
               onChange={(e) => setForm({ ...form, tldv_api_key: e.target.value })}
-              placeholder="Cole sua API key"
+              placeholder="Cole uma nova API key para atualizar"
             />
           </div>
           <Button type="button" variant="outline" onClick={syncTldvNow} disabled={syncingTldv}>

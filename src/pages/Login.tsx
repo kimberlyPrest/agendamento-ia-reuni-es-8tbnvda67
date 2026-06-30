@@ -87,15 +87,7 @@ export default function Login() {
           </Button>
         </form>
 
-        <div className="mt-8 flex items-center gap-4 text-center font-mono text-xs text-muted-foreground">
-          <span className="h-px flex-1 bg-border" />
-          <span>ou entrar via</span>
-          <span className="h-px flex-1 bg-border" />
-        </div>
-
-        <Button asChild variant="outline" className="mt-6 w-full">
-          <Link to="/">Agendamento sem senha</Link>
-        </Button>
+        <Button asChild variant="outline" className="mt-6 w-full"></Button>
       </ElitePanel>
     </main>
   )

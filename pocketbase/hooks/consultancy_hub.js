@@ -634,7 +634,27 @@ routerAdd('POST', '/backend/v1/hub/{path...}', (e) => {
     const parsed = new Date(raw)
     return Number.isNaN(parsed.getTime()) ? null : parsed
   }
+  const detectCsvDelimiter = (text) => {
+    const firstLine =
+      String(text || '')
+        .split(/\r?\n/)
+        .find((line) => line.trim()) || ''
+    let quoted = false
+    let commas = 0
+    let semicolons = 0
+    for (let index = 0; index < firstLine.length; index += 1) {
+      const char = firstLine[index]
+      const next = firstLine[index + 1]
+      if (char === '"') {
+        if (quoted && next === '"') index += 1
+        else quoted = !quoted
+      } else if (!quoted && char === ',') commas += 1
+      else if (!quoted && char === ';') semicolons += 1
+    }
+    return semicolons > commas ? ';' : ','
+  }
   const parseCsv = (text) => {
+    const delimiter = detectCsvDelimiter(text)
     const rows = []
     let row = []
     let cell = ''
@@ -647,7 +667,7 @@ routerAdd('POST', '/backend/v1/hub/{path...}', (e) => {
           cell += '"'
           index += 1
         } else quoted = !quoted
-      } else if (char === ',' && !quoted) {
+      } else if (char === delimiter && !quoted) {
         row.push(cell)
         cell = ''
       } else if ((char === '\n' || char === '\r') && !quoted) {
@@ -739,12 +759,25 @@ routerAdd('POST', '/backend/v1/hub/{path...}', (e) => {
       const email = normalizeEmail(rowValue(row, headerMap, ['Email do contato', 'Email']))
       if (!email) return
       checked += 1
-      const dealId = rowValue(row, headerMap, ['Deal ID'])
+      const dealId = rowValue(row, headerMap, [
+        'Deal ID',
+        'ID do negocio',
+        'ID do negócio',
+        'HubSpot Deal ID',
+      ])
       const dealName = rowValue(row, headerMap, ['Nome do negocio', 'Nome do negócio'])
-      const stageId = rowValue(row, headerMap, ['Etapa do negocio', 'Etapa do negócio'])
+      const stageId = rowValue(row, headerMap, [
+        'Etapa do negocio',
+        'Etapa do negócio',
+        'Status na pipe',
+        'Status da pipe',
+      ])
       const ownerId = rowValue(row, headerMap, [
         'Proprietario do negocio',
         'Proprietário do negócio',
+        'Nome do proprietario do negocio',
+        'Nome do proprietário do negócio',
+        'Owner',
       ])
       const firstConsultantKey = rowValue(row, headerMap, [
         'Especialista Primeira Reuniao',
@@ -755,13 +788,18 @@ routerAdd('POST', '/backend/v1/hub/{path...}', (e) => {
         'Especialista Segunda Reunião',
       ])
       const name = rowValue(row, headerMap, ['Nome do contato', 'Nome']) || dealName || email
-      const phone = rowValue(row, headerMap, ['Telefone do contato', 'Telefone'])
+      const phone = rowValue(row, headerMap, [
+        'Telefone do contato',
+        'Telefone/WhatsApp',
+        'Telefone',
+      ])
       const stageMap = externalId('deal_stage', stageId)
       const ownerMap = externalId('owner', ownerId)
       const program = programForStage(stageId)
       const consultant = consultantForOwner(ownerId, firstConsultantKey || secondConsultantKey)
       const user = ensureUser(email, name, 'client', DEFAULT_CLIENT_PASSWORD)
-      let client = findByData('clients', 'email', email)
+      let client = dealId ? findByData('clients', 'hubspot_deal_id', dealId) : null
+      if (!client) client = findByData('clients', 'email', email)
       if (!client) client = new Record($app.findCollectionByNameOrId('clients'))
       client.set('email', email)
       client.set('name', name)
@@ -1107,12 +1145,13 @@ routerAdd('POST', '/backend/v1/hub/{path...}', (e) => {
         'whatsapp_number',
         'email',
         'photo_url',
-        'tldv_api_key',
         'google_calendar_id',
         'working_timezone',
       ].forEach((field) => {
         if (body[field] !== undefined) consultant.set(field, body[field])
       })
+      if (String(body.tldv_api_key || '').trim())
+        consultant.set('tldv_api_key', String(body.tldv_api_key).trim())
       if (body.working_hours !== undefined) consultant.set('working_hours', body.working_hours)
       $app.save(consultant)
       return e.json(200, { consultant })

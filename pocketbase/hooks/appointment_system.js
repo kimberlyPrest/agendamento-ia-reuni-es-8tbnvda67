@@ -59,6 +59,12 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
     const value = record && record.get ? record.get(field) : record && record[field]
     return value === undefined || value === null || value === '' ? fallback : String(value)
   }
+  const boolValue = (record, field, fallback) => {
+    const value = record && record.get ? record.get(field) : record && record[field]
+    if (value === undefined || value === null || value === '') return fallback
+    if (typeof value === 'boolean') return value
+    return String(value).toLowerCase() === 'true'
+  }
   const addMinutes = (date, minutes) => new Date(date.getTime() + minutes * 60000)
   const minutesFromTime = (time) => {
     const parts = String(time || '').split(':')
@@ -318,6 +324,108 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
       return []
     }
   }
+  const normalizeStageText = (value) => {
+    const replacements = {
+      á: 'a',
+      à: 'a',
+      â: 'a',
+      ã: 'a',
+      ä: 'a',
+      é: 'e',
+      è: 'e',
+      ê: 'e',
+      ë: 'e',
+      í: 'i',
+      ì: 'i',
+      î: 'i',
+      ï: 'i',
+      ó: 'o',
+      ò: 'o',
+      ô: 'o',
+      õ: 'o',
+      ö: 'o',
+      ú: 'u',
+      ù: 'u',
+      û: 'u',
+      ü: 'u',
+      ç: 'c',
+    }
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[áàâãäéèêëíìîïóòôõöúùûüç]/g, (char) => replacements[char] || char)
+  }
+  const slotStageMeetingNumber = (stage) => {
+    const match = normalizeStageText(stage).match(/(\d+)\s*(?:a|o)?/)
+    if (match) return Number(match[1])
+    const words = [
+      ['primeira', 1],
+      ['primeiro', 1],
+      ['segunda', 2],
+      ['segundo', 2],
+      ['terceira', 3],
+      ['terceiro', 3],
+      ['quarta', 4],
+      ['quarto', 4],
+      ['quinta', 5],
+      ['quinto', 5],
+      ['sexta', 6],
+      ['sexto', 6],
+    ]
+    const text = normalizeStageText(stage)
+    const found = words.find((item) => text.includes(item[0]))
+    return found ? found[1] : 0
+  }
+  const slotProgramLimit = (client, program) => {
+    const override = Number(client.get('meeting_limit_override') || 0)
+    if (override > 0) return override
+    return Number(program.get('total_meetings') || 1) + Number(client.get('extra_meetings') || 0)
+  }
+  const slotClientMeetings = (clientId) => {
+    try {
+      return $app.findRecordsByFilter('meetings', `client_id = '${clientId}'`, 'start_time', 500, 0)
+    } catch (_) {
+      return []
+    }
+  }
+  const clientSlotBlockReason = (client, program, ignoreMeetingId) => {
+    const stageText = client.get('deal_stage_name') || client.get('deal_stage_id') || ''
+    const text = normalizeStageText(stageText)
+    const stageNumber = slotStageMeetingNumber(stageText)
+    const hasRefund =
+      text.includes('reembolso') || text.includes('reembols') || text.includes('refund')
+    const finalisedByStage = text.includes('finalizad') && stageNumber === 0
+    const asksTally =
+      text.includes('formulario nao preenchido') ||
+      text.includes('formulario nao respondido') ||
+      text.includes('formulario pendente') ||
+      text.includes('novos alunos') ||
+      text.includes('novo aluno')
+    if (hasRefund) return 'Status de reembolso: este cliente não pode agendar novas reuniões.'
+    if (
+      boolValue(program, 'require_tally', true) &&
+      !client.get('form_answered') &&
+      (asksTally || !stageText)
+    )
+      return 'Antes de agendar, responda o formulário preparatório.'
+    const limit = slotProgramLimit(client, program)
+    let completed = Math.max(0, Number(client.get('current_meeting_number') || 1) - 1)
+    if (stageText) completed = 0
+    if (text.includes('finalizad') && stageNumber > 0) completed = stageNumber
+    if (finalisedByStage) completed = limit
+    if (completed >= limit) return 'A consultoria deste programa já foi finalizada.'
+    const futureLimit = boolValue(program, 'allow_concurrent', false)
+      ? numberValue(program, 'max_future_meetings', 1)
+      : 1
+    const futureCount = slotClientMeetings(client.id).filter((meeting) => {
+      if (meeting.id === ignoreMeetingId) return false
+      const start = recordTime(meeting, 'start_time')
+      return meeting.get('status') === 'scheduled' && start && start > new Date()
+    }).length
+    if (!ignoreMeetingId && futureCount >= futureLimit)
+      return 'Já existe uma reunião futura agendada para este cliente.'
+    return ''
+  }
   const refreshGoogleAccessToken = (consultant, forceRefresh) => {
     const currentToken = consultant.get('google_access_token')
     const expiry = parseDate(consultant.get('google_token_expiry'))
@@ -515,9 +623,10 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
     if (!consultantId || !dateStr) return bad('Parâmetros obrigatórios ausentes')
     try {
       const consultant = $app.findRecordById('consultants', consultantId)
+      let client = null
       let program = { get: (field) => (field === 'meeting_duration' ? 60 : 0) }
       if (clientId) {
-        const client = $app.findRecordById('clients', clientId)
+        client = $app.findRecordById('clients', clientId)
         program = $app.findRecordById('programs', client.get('program_id'))
       }
       if (!googleConnected(consultant)) {
@@ -557,6 +666,24 @@ routerAdd('GET', '/backend/v1/{path...}', (e) => {
             : calendarId === writableGoogleCalendarId(consultant),
         }
       })
+      const blockReason = client ? clientSlotBlockReason(client, program, ignoreMeetingId) : ''
+      if (blockReason) {
+        return e.json(200, {
+          slots: [],
+          google_connected: true,
+          google_connected_email: consultant.get('google_connected_email') || '',
+          creation_calendar_id: writableGoogleCalendarId(consultant),
+          configured_calendar_ids: configuredCalendarIds,
+          busy_calendar_ids: busyCalendarIds,
+          calendar_sources: calendarSources,
+          calendar_source_count: calendarSources.length,
+          uses_calendar_list: hasCalendarListScope(consultant),
+          timezone: textValue(consultant, 'working_timezone', BR_TIMEZONE),
+          blocked: true,
+          blocked_reason: blockReason,
+          message: blockReason,
+        })
+      }
       const debugSlots = e.request.url.query().get('debug') === '1' && requireAdmin()
       const slotResult = buildSlots(consultant, program, dateStr, ignoreMeetingId, debugSlots)
       let slots = debugSlots ? slotResult.slots : slotResult
