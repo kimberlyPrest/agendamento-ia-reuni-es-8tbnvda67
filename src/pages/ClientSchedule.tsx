@@ -170,7 +170,7 @@ function AvailabilityCalendar({
 function CompactGuidelines({ action, className }: { action: ReactNode; className?: string }) {
   const items = [
     'Escolha um dia e horário tranquilo, sem reuniões coladas e sem correria.',
-    'Se precisar remarcar, faça isso com no mínimo 24h de antecedência.',
+    'Os horários exibidos já consideram sua agenda e a disponibilidade do consultor.',
     'O novo horário depende da agenda do consultor e pode entrar no fim da fila.',
   ]
 
@@ -227,7 +227,7 @@ export default function ClientSchedule() {
   const consultant = client?.expand?.consultant_id
   const minRescheduleHours = Number(program?.min_reschedule_hours ?? 24)
   const lateRescheduleDelayDays = Number(program?.late_reschedule_delay_days ?? 7)
-  const lateRescheduleUnit = lateRescheduleDelayDays === 1 ? 'dia' : 'dias'
+
   const existingMeetingDate =
     isRescheduling && upcomingMeeting?.start_time ? new Date(upcomingMeeting.start_time) : null
   const isLateReschedule = existingMeetingDate
@@ -405,16 +405,6 @@ export default function ClientSchedule() {
             <span className="text-primary">{consultant?.name}</span>.
           </p>
         </div>
-
-        {isLateReschedule && (
-          <ElitePanel className="mt-3 flex shrink-0 max-w-4xl gap-3 border-[#fbbf24]/30 p-3 text-sm text-[#fbbf24]">
-            <AlertTriangle className="mt-1 h-5 w-5 shrink-0" />
-            <span>
-              Como a remarcação passou do prazo mínimo, os novos horários aparecem a partir de{' '}
-              {lateRescheduleDelayDays} {lateRescheduleUnit}.
-            </span>
-          </ElitePanel>
-        )}
 
         <div className="mt-3 grid gap-4 sm:mt-5 lg:grid-cols-[minmax(0,1fr)_300px]">
           <ElitePanel className="flex flex-col p-3 sm:p-4 md:p-5">
