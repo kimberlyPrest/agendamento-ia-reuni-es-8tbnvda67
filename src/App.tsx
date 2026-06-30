@@ -17,6 +17,8 @@ import ClientConfirmation from '@/pages/ClientConfirmation'
 import { AdminLayout } from '@/components/layouts/AdminLayout'
 import Login from '@/pages/Login'
 import AdminLogin from '@/pages/admin/Login'
+import ForgotPassword from '@/pages/ForgotPassword'
+import ResetPassword from '@/pages/ResetPassword'
 import AdminDashboard from '@/pages/admin/Dashboard'
 import ClientesList from '@/pages/admin/ClientesList'
 import ProgramasList from '@/pages/admin/ProgramasList'
@@ -49,6 +51,8 @@ const App = () => (
             {/* Login */}
             <Route path="/login" element={<Login />} />
             <Route path="/admin/login" element={<AdminLogin />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
 
             {/* Admin Flow */}
             <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />

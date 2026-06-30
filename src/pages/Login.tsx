@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { KeyRound, LogIn, UserRound } from 'lucide-react'
+import { KeyRound, LogIn, UserRound, Link2 } from 'lucide-react'
 
 import { EliteBrand, ElitePanel } from '@/components/elite/ElitePrimitives'
 import { Button } from '@/components/ui/button'
@@ -85,6 +85,16 @@ export default function Login() {
             {submitting ? 'Entrando...' : 'Entrar'}
             {!submitting && <LogIn className="h-5 w-5" />}
           </Button>
+
+          <div className="flex justify-end">
+            <Link
+              to="/forgot-password"
+              className="inline-flex items-center gap-1 font-mono text-sm text-muted-foreground transition-colors hover:text-primary"
+            >
+              <Link2 className="h-3 w-3" />
+              Forgot password?
+            </Link>
+          </div>
         </form>
 
         <Button asChild variant="outline" className="mt-6 w-full"></Button>
