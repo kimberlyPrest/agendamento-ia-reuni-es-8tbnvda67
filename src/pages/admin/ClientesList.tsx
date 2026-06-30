@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import pb from '@/lib/pocketbase/client'
 import useRealtime from '@/hooks/use-realtime'
 import {
@@ -28,8 +28,10 @@ import {
 } from '@/components/ui/dialog'
 import { ClientForm } from '@/components/admin/ClientForm'
 import { deleteClient, syncTallySubmissions } from '@/services/api'
-import { Loader2, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Loader2, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
+
+const PER_PAGE_OPTIONS = [20, 50, 100]
 
 export default function ClientesList() {
   const [clients, setClients] = useState<any[]>([])
@@ -39,13 +41,43 @@ export default function ClientesList() {
   const [editing, setEditing] = useState<any | null>(null)
   const [programFilter, setProgramFilter] = useState('all')
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [syncingTally, setSyncingTally] = useState(false)
+  const [page, setPage] = useState(1)
+  const [perPage, setPerPage] = useState(20)
+  const [totalItems, setTotalItems] = useState(0)
+  const [totalPages, setTotalPages] = useState(0)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search.trim())
+      setPage(1)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [search])
 
   const loadData = async () => {
-    const res = await pb
-      .collection('clients')
-      .getFullList({ expand: 'program_id,consultant_id', sort: 'name' })
-    setClients(res)
+    setLoading(true)
+    try {
+      const parts: string[] = []
+      if (programFilter !== 'all') parts.push(`program_id = "${programFilter}"`)
+      if (debouncedSearch)
+        parts.push(`(name ~ "${debouncedSearch}" || email ~ "${debouncedSearch}")`)
+      const filter = parts.join(' && ')
+      const res = await pb.collection('clients').getList(page, perPage, {
+        expand: 'program_id,consultant_id',
+        sort: 'name',
+        ...(filter ? { filter } : {}),
+      })
+      setClients(res.items)
+      setTotalItems(res.totalItems)
+      setTotalPages(res.totalPages)
+    } catch (_) {
+      toast.error('Não foi possível carregar os clientes.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   const loadRefs = async () => {
@@ -59,22 +91,13 @@ export default function ClientesList() {
 
   useEffect(() => {
     loadData()
+  }, [page, perPage, programFilter, debouncedSearch])
+
+  useEffect(() => {
     loadRefs()
   }, [])
 
   useRealtime('clients', () => loadData())
-
-  const filteredClients = useMemo(() => {
-    return clients.filter((client) => {
-      const matchesProgram = programFilter === 'all' || client.program_id === programFilter
-      const term = search.trim().toLowerCase()
-      const matchesSearch =
-        !term ||
-        client.name?.toLowerCase().includes(term) ||
-        client.email?.toLowerCase().includes(term)
-      return matchesProgram && matchesSearch
-    })
-  }, [clients, programFilter, search])
 
   const closeDialog = () => {
     setOpen(false)
@@ -112,12 +135,25 @@ export default function ClientesList() {
     }
   }
 
+  const handlePerPageChange = (value: string) => {
+    setPerPage(Number(value))
+    setPage(1)
+  }
+
+  const handleProgramFilterChange = (value: string) => {
+    setProgramFilter(value)
+    setPage(1)
+  }
+
   const getLimit = (client: any) => {
     if (client.meeting_limit_override > 0) return client.meeting_limit_override
     return (
       Number(client.expand?.program_id?.total_meetings || 0) + Number(client.extra_meetings || 0)
     )
   }
+
+  const rangeStart = totalItems > 0 ? (page - 1) * perPage + 1 : 0
+  const rangeEnd = Math.min(page * perPage, totalItems)
 
   return (
     <div className="space-y-6">
@@ -135,7 +171,7 @@ export default function ClientesList() {
             onChange={(e) => setSearch(e.target.value)}
             className="sm:w-64"
           />
-          <Select value={programFilter} onValueChange={setProgramFilter}>
+          <Select value={programFilter} onValueChange={handleProgramFilterChange}>
             <SelectTrigger className="sm:w-56">
               <SelectValue placeholder="Filtrar programa" />
             </SelectTrigger>
@@ -199,56 +235,109 @@ export default function ClientesList() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredClients.map((client) => (
-              <TableRow key={client.id}>
-                <TableCell className="font-medium">{client.name}</TableCell>
-                <TableCell>{client.email}</TableCell>
-                <TableCell>{client.expand?.program_id?.name}</TableCell>
-                <TableCell>{client.expand?.consultant_id?.name}</TableCell>
-                <TableCell>
-                  {client.current_meeting_number || 1} / {getLimit(client)}
-                  {client.extra_meetings > 0 && (
-                    <span className="text-muted-foreground"> +{client.extra_meetings}</span>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <Badge variant={client.form_answered ? 'default' : 'destructive'}>
-                    {client.form_answered ? 'Respondido' : 'Pendente'}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={() => {
-                        setEditing(client)
-                        setOpen(true)
-                      }}
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="text-destructive"
-                      onClick={() => handleDelete(client)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-            {filteredClients.length === 0 && (
+            {loading ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                  Nenhum cliente encontrado.
+                <TableCell colSpan={7} className="text-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin mx-auto text-muted-foreground" />
                 </TableCell>
               </TableRow>
+            ) : (
+              <>
+                {clients.map((client) => (
+                  <TableRow key={client.id}>
+                    <TableCell className="font-medium">{client.name}</TableCell>
+                    <TableCell>{client.email}</TableCell>
+                    <TableCell>{client.expand?.program_id?.name}</TableCell>
+                    <TableCell>{client.expand?.consultant_id?.name}</TableCell>
+                    <TableCell>
+                      {client.current_meeting_number || 1} / {getLimit(client)}
+                      {client.extra_meetings > 0 && (
+                        <span className="text-muted-foreground"> +{client.extra_meetings}</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={client.form_answered ? 'default' : 'destructive'}>
+                        {client.form_answered ? 'Respondido' : 'Pendente'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => {
+                            setEditing(client)
+                            setOpen(true)
+                          }}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="text-destructive"
+                          onClick={() => handleDelete(client)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {clients.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                      Nenhum cliente encontrado.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </>
             )}
           </TableBody>
         </Table>
+
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-border">
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-muted-foreground whitespace-nowrap">
+              {rangeStart}-{rangeEnd} de {totalItems}
+            </span>
+            <Select value={String(perPage)} onValueChange={handlePerPageChange}>
+              <SelectTrigger className="w-[90px] h-8">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PER_PAGE_OPTIONS.map((opt) => (
+                  <SelectItem key={opt} value={String(opt)}>
+                    {opt}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1 || loading}
+            >
+              <ChevronLeft className="w-4 h-4 mr-1" />
+              Anterior
+            </Button>
+            <span className="text-sm text-muted-foreground whitespace-nowrap">
+              Página {page} de {totalPages || 1}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages || loading}
+            >
+              Próximo
+              <ChevronRight className="w-4 h-4 ml-1" />
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   )
