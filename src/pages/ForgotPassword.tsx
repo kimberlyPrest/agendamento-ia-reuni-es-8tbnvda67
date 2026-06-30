@@ -43,23 +43,26 @@ export default function ForgotPassword() {
               <Mail className="h-6 w-6 text-primary" />
             </div>
             <div className="space-y-2">
-              <h2 className="font-display text-xl">Check your inbox</h2>
+              <h2 className="font-display text-xl">Verifique sua caixa de entrada</h2>
               <p className="text-sm text-muted-foreground">
-                If an account exists for this email, you will receive a reset link shortly.
+                Se existir uma conta para este e-mail, você receberá um link de recuperação em
+                breve.
               </p>
             </div>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="mt-10 space-y-5">
             <div className="space-y-2">
-              <h2 className="font-display text-xl text-center">Reset your password</h2>
+              <h2 className="font-display text-xl text-center">Recupere sua senha</h2>
               <p className="text-sm text-muted-foreground text-center">
-                Enter your registered email and we'll send you a recovery link.
+                Digite seu e-mail cadastrado e enviaremos um link de recuperação.
               </p>
             </div>
 
             <div className="space-y-2">
-              <label className="font-mono text-sm font-semibold text-muted-foreground">Email</label>
+              <label className="font-mono text-sm font-semibold text-muted-foreground">
+                E-mail
+              </label>
               <div className="relative">
                 <Mail className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -67,7 +70,7 @@ export default function ForgotPassword() {
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
                   className="pl-11"
-                  placeholder="officer@adapta.elite"
+                  placeholder="exemplo@adapta.elite"
                   required
                 />
               </div>
@@ -75,7 +78,7 @@ export default function ForgotPassword() {
             </div>
 
             <Button type="submit" size="lg" className="h-14 w-full" disabled={submitting}>
-              {submitting ? 'Sending...' : 'Send Reset Link'}
+              {submitting ? 'Enviando...' : 'Enviar Link de Recuperação'}
               {!submitting && <Send className="h-5 w-5" />}
             </Button>
           </form>
@@ -84,7 +87,7 @@ export default function ForgotPassword() {
         <Button asChild variant="outline" className="mt-6 w-full">
           <Link to="/login">
             <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Login
+            Voltar para o Login
           </Link>
         </Button>
       </ElitePanel>
