@@ -53,6 +53,22 @@ routerAdd('GET', '/backend/v1/hub/{path...}', (e) => {
       findByData('consultants', 'email', normalizeEmail(e.auth.email()))
     )
   }
+  const publicConsultant = (consultant) => ({
+    id: consultant.id,
+    user_id: consultant.get('user_id') || '',
+    name: consultant.get('name') || '',
+    whatsapp_number: consultant.get('whatsapp_number') || '',
+    email: consultant.get('email') || '',
+    photo_url: consultant.get('photo_url') || '',
+    hubspot_owner_id: consultant.get('hubspot_owner_id') || '',
+    google_calendar_id: consultant.get('google_calendar_id') || 'primary',
+    google_connected_email: consultant.get('google_connected_email') || '',
+    google_sync_status: consultant.get('google_sync_status') || '',
+    calendar_connected_at: consultant.get('calendar_connected_at') || '',
+    working_timezone: consultant.get('working_timezone') || 'America/Sao_Paulo',
+    working_hours: consultant.get('working_hours') || {},
+    has_tldv_api_key: Boolean(consultant.get('tldv_api_key')),
+  })
   const consultantScopeId = () => {
     if (isAdmin()) return e.request.url.query().get('consultant_id') || ''
     const consultant = findConsultantForAuth()
@@ -286,7 +302,7 @@ routerAdd('GET', '/backend/v1/hub/{path...}', (e) => {
           ? $app.findRecordById('consultants', e.request.url.query().get('consultant_id'))
           : findConsultantForAuth()
       if (!consultant) return bad('Consultor nao encontrado.')
-      return e.json(200, { consultant })
+      return e.json(200, { consultant: publicConsultant(consultant) })
     } catch (err) {
       return bad(err.message || 'Erro ao carregar consultor.')
     }
@@ -430,6 +446,22 @@ routerAdd('POST', '/backend/v1/hub/{path...}', (e) => {
       findByData('consultants', 'email', normalizeEmail(e.auth.email()))
     )
   }
+  const publicConsultant = (consultant) => ({
+    id: consultant.id,
+    user_id: consultant.get('user_id') || '',
+    name: consultant.get('name') || '',
+    whatsapp_number: consultant.get('whatsapp_number') || '',
+    email: consultant.get('email') || '',
+    photo_url: consultant.get('photo_url') || '',
+    hubspot_owner_id: consultant.get('hubspot_owner_id') || '',
+    google_calendar_id: consultant.get('google_calendar_id') || 'primary',
+    google_connected_email: consultant.get('google_connected_email') || '',
+    google_sync_status: consultant.get('google_sync_status') || '',
+    calendar_connected_at: consultant.get('calendar_connected_at') || '',
+    working_timezone: consultant.get('working_timezone') || 'America/Sao_Paulo',
+    working_hours: consultant.get('working_hours') || {},
+    has_tldv_api_key: Boolean(consultant.get('tldv_api_key')),
+  })
   const expand = (record, fields) => {
     try {
       $app.expandRecord(record, fields)
@@ -1135,7 +1167,10 @@ routerAdd('POST', '/backend/v1/hub/{path...}', (e) => {
       if (!consultant.get('working_timezone'))
         consultant.set('working_timezone', 'America/Sao_Paulo')
       $app.save(consultant)
-      return e.json(200, { consultant, user_id: user ? user.id : consultant.get('user_id') })
+      return e.json(200, {
+        consultant: publicConsultant(consultant),
+        user_id: user ? user.id : consultant.get('user_id'),
+      })
     } catch (err) {
       return bad(err.message || 'Erro ao salvar consultor.')
     }
@@ -1164,7 +1199,7 @@ routerAdd('POST', '/backend/v1/hub/{path...}', (e) => {
         consultant.set('tldv_api_key', String(body.tldv_api_key).trim())
       if (body.working_hours !== undefined) consultant.set('working_hours', body.working_hours)
       $app.save(consultant)
-      return e.json(200, { consultant })
+      return e.json(200, { consultant: publicConsultant(consultant) })
     } catch (err) {
       return bad(err.message || 'Erro ao atualizar perfil.')
     }
