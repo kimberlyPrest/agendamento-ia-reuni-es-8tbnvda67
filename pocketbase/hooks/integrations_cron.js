@@ -147,7 +147,7 @@ const eliteSyncTallyAnsweredClients = () => {
 }
 
 const eliteGoogleConfigReady = () =>
-  Boolean(eliteEnv('GOOGLE_CLIENT_ID') && eliteEnv('GOOGLE_CLIENT_SECRET'))
+  Boolean($secrets.get('GOOGLE_CLIENT_ID') && $secrets.get('GOOGLE_CLIENT_SECRET'))
 const eliteConfiguredGoogleCalendarIds = (consultant) => {
   const raw = consultant.get('google_calendar_id') || 'primary'
   const ids = String(raw)
@@ -168,8 +168,8 @@ const eliteRefreshGoogleAccessToken = (consultant) => {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: eliteFormEncode({
-      client_id: eliteEnv('GOOGLE_CLIENT_ID'),
-      client_secret: eliteEnv('GOOGLE_CLIENT_SECRET'),
+      client_id: $secrets.get('GOOGLE_CLIENT_ID'),
+      client_secret: $secrets.get('GOOGLE_CLIENT_SECRET'),
       refresh_token: refreshToken,
       grant_type: 'refresh_token',
     }),
@@ -236,6 +236,14 @@ const eliteSyncGoogleCalendars = () => {
     } catch (err) {
       consultant.set('google_sync_status', 'calendar_error')
       $app.save(consultant)
+      eliteWriteSyncLog(
+        'google_calendar_sync',
+        'error',
+        0,
+        0,
+        err && err.message ? err.message : String(err),
+        { consultant_id: consultant.id, step: 'sync_calendars' },
+      )
     }
   })
   return { enabled: true, checked, updated }
@@ -304,6 +312,7 @@ const eliteSyncGoogleMeetings = () => {
   let updated = 0
   let eventsChecked = 0
   let missingCancelled = 0
+  let imported = 0
   let errors = 0
   consultants.forEach((consultant) => {
     try {
@@ -317,11 +326,16 @@ const eliteSyncGoogleMeetings = () => {
       })
       const meetings = $app.findRecordsByFilter(
         'meetings',
-        `consultant_id = '${eliteEscapeFilterValue(consultant.id)}' && google_event_id != '' && status = 'scheduled' && start_time >= '${elitePbDate(windowStart)}' && start_time <= '${elitePbDate(windowEnd)}'`,
+        `consultant_id = '${eliteEscapeFilterValue(consultant.id)}' && google_event_id != '' && start_time >= '${elitePbDate(windowStart)}' && start_time <= '${elitePbDate(windowEnd)}'`,
         'start_time',
         1000,
         0,
       )
+      const meetingsByEventId = {}
+      meetings.forEach((meeting) => {
+        const eid = meeting.get('google_event_id')
+        if (eid) meetingsByEventId[eid] = meeting
+      })
       meetings.forEach((meeting) => {
         checked += 1
         const event = eventsById[meeting.get('google_event_id')]
@@ -342,17 +356,69 @@ const eliteSyncGoogleMeetings = () => {
           'meet_link',
           eliteGoogleMeetLinkFromEvent(event) || meeting.get('meet_link') || '',
         )
+        if (event.status === 'confirmed') meeting.set('status', 'scheduled')
         $app.save(meeting)
         updated += 1
       })
-    } catch (_) {
+      // Import new events by matching attendees to clients
+      const clients = $app.findRecordsByFilter(
+        'clients',
+        `consultant_id = '${eliteEscapeFilterValue(consultant.id)}'`,
+        'name',
+        1000,
+        0,
+      )
+      const clientsByEmail = {}
+      clients.forEach((client) => {
+        const email = eliteNormalizeEmail(client.get('email'))
+        if (email) clientsByEmail[email] = client
+      })
+      events.forEach((event) => {
+        if (!event.id || event.status === 'cancelled') return
+        if (meetingsByEventId[event.id]) return
+        const emails = []
+        eliteCollectEmails(event.attendees, emails)
+        eliteCollectEmails(event.organizer, emails)
+        if (!emails.length) return
+        const matchedEmail = emails.find((email) => clientsByEmail[email])
+        if (!matchedEmail) return
+        const client = clientsByEmail[matchedEmail]
+        const start = eliteParseDate((event.start || {}).dateTime || (event.start || {}).date)
+        const end = eliteParseDate((event.end || {}).dateTime || (event.end || {}).date)
+        if (!start || !end) return
+        const meeting = new Record($app.findCollectionByNameOrId('meetings'))
+        meeting.set('client_id', client.id)
+        meeting.set('consultant_id', consultant.id)
+        meeting.set('program_id', client.get('program_id'))
+        meeting.set('start_time', elitePbDate(start))
+        meeting.set('end_time', elitePbDate(end))
+        meeting.set('google_event_id', event.id)
+        meeting.set('title', event.summary || '')
+        meeting.set('google_html_link', event.htmlLink || '')
+        meeting.set('meet_link', eliteGoogleMeetLinkFromEvent(event))
+        meeting.set('status', 'scheduled')
+        meeting.set('source', 'google_calendar')
+        $app.save(meeting)
+        imported += 1
+        meetingsByEventId[event.id] = meeting
+      })
+    } catch (err) {
       errors += 1
+      eliteWriteSyncLog(
+        'google_calendar_sync',
+        'error',
+        0,
+        0,
+        err && err.message ? err.message : String(err),
+        { consultant_id: consultant.id, step: 'sync_meetings' },
+      )
     }
   })
   return {
     enabled: true,
     checked,
     updated,
+    imported,
     events_checked: eventsChecked,
     missing_cancelled: missingCancelled,
     errors,
